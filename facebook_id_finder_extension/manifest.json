@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Facebook ID Finder Pro",
+  "version": "1.1",
+  "description": "精准抓取 Facebook 个人主页、公共主页、小组及活动的数字 ID",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.facebook.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "查找 Facebook ID"
+  }
+}

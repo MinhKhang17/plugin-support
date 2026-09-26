@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    .language { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+    .language select { padding:4px; border:1px solid #cbd5e1; border-radius:5px; }
+    body { width: 340px; font: 13px/1.5 system-ui, sans-serif; padding: 12px; color: #222; }
+    h3 { margin: 0 0 8px; font-size: 14px; }
+    .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    button { flex: 1; padding: 6px 8px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #eef2f7; }
+    button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .box { background: #f1f5f9; border-radius: 6px; padding: 8px; margin: 8px 0; font-size: 12px; }
+    .box b { color: #0f172a; }
+    .err { color: #b91c1c; word-break: break-all; }
+    .hint { color: #64748b; font-size: 11px; }
+    details.box summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
+    details.box label { display: block; margin: 6px 0 2px; font-size: 11px; color: #475569; }
+    details.box input, details.box select { width: 100%; box-sizing: border-box; padding: 5px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; }
+    .seg { border: 1px dashed #94a3b8; border-radius: 6px; padding: 6px; margin: 6px 0; }
+    .seg .t { font-size: 11px; color: #334155; font-weight: 600; margin-bottom: 4px; }
+    .grid2 { display: flex; gap: 6px; }
+    .grid2 > div { flex: 1; }
+  </style>
+</head>
+<body>
+  <div class="language"><label for="language">Ngôn ngữ / 语言</label><select id="language"><option value="vi">Tiếng Việt</option><option value="zh">中文</option></select></div>
+  <h3><span data-i18n="k0">AKC Marketplace · Thu thập dữ liệu</span></h3>
+  <div class="box">
+    <b data-i18n="pacing">Thông số thu thập · v1.2.0</b>
+    <p data-i18n="params"></p>
+    <div><span data-i18n="counter"></span> <b id="processed">0</b></div>
+    <div><span data-i18n="next"></span> <b id="countdown">—</b></div>
+    <div><span data-i18n="reason"></span> <span id="stopReason">—</span></div>
+    <p class="hint" data-i18n="limits"></p>
+  </div>
+  <div class="row">
+    <button class="primary" id="startTest"><span data-i18n="k1">Chạy thử (3 trang)</span></button>
+    <button id="startFull"><span data-i18n="k2">Chạy toàn bộ</span></button>
+  </div>
+  <div class="row">
+    <button id="pause"><span data-i18n="k3">Tạm dừng</span></button>
+    <button id="resume"><span data-i18n="k4">Tiếp tục</span></button>
+    <button id="reset"><span data-i18n="k5">Đặt lại</span></button>
+  </div>
+  <div class="box">
+    <div><span data-i18n="k6">Trạng thái:</span> <b id="status">-</b></div>
+    <div><span data-i18n="k7">Giai đoạn:</span> <b id="phase">-</b></div>
+    <div><span data-i18n="k8">Trang danh sách:</span> <b id="listProg">-</b></div>
+    <div><span data-i18n="k9">Trang cơ sở:</span> <b id="breedProg">-</b></div>
+    <div><span data-i18n="k10">Mẫu kiểm tra:</span> <b id="dbg">0</b></div>
+    <div class="err" id="errs"></div>
+  </div>
+  <div class="row">
+    <button id="expCsv"><span data-i18n="k11">Xuất CSV</span></button>
+    <button id="expHtml"><span data-i18n="k12">Xuất báo cáo HTML</span></button>
+  </div>
+  <div class="row">
+    <button id="expDbg"><span data-i18n="k13">Xuất HTML mẫu kiểm tra</span></button>
+  </div>
+
+  <details class="box">
+    <summary><span data-i18n="k14">Mẫu URL danh sách (3 phần)</span></summary>
+    <div class="seg">
+      <div class="t"><span data-i18n="k15">① Tiền tố + ② Dãy + ③ Hậu tố</span></div>
+      <label><span data-i18n="k16">① Tiền tố</span></label>
+      <input id="cfgPrefix" type="text" />
+      <div class="grid2">
+        <div>
+          <label><span data-i18n="k17">② Loại dãy</span></label>
+          <select id="cfgSeqType">
+            <option value="number" data-i18n="k18">Số 1–740</option>
+            <option value="alpha" data-i18n="k19">Chữ a–z</option>
+          </select>
+        </div>
+        <div>
+          <label><span data-i18n="k20">② Bắt đầu / kết thúc</span></label>
+          <div class="grid2">
+            <input id="cfgSeqStart" type="text" />
+            <input id="cfgSeqEnd" type="text" />
+          </div>
+        </div>
+      </div>
+      <label><span data-i18n="k21">③ Hậu tố</span></label>
+      <input id="cfgSuffix" type="text" />
+      <label><span data-i18n="k32">Số web cơ sở mở đồng thời (1–5)</span></label>
+      <input id="cfgConcurrentTabs" type="number" min="1" max="5" step="1" />
+      <div class="hint"><span data-i18n="k33">Tăng tốc ở giai đoạn lấy thông tin cơ sở. Khuyến nghị 2–3; quá cao có thể bị giới hạn bởi website.</span></div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="saveCfg" class="primary"><span data-i18n="k22">Lưu cài đặt</span></button>
+      <button id="resetCfg"><span data-i18n="k23">Khôi phục mặc định</span></button>
+    </div>
+    <div class="hint"><span data-i18n="k24">Sau khi sửa mẫu URL, hãy bắt đầu lượt chạy mới. XPath có hiệu lực từ trang tiếp theo.</span></div>
+    <div id="cfgMsg" class="hint"></div>
+  </details>
+
+  <details class="box">
+    <summary><span data-i18n="k25">Bộ chọn dữ liệu (có thể sửa XPath)</span></summary>
+    <label><span data-i18n="k26">XPath liên kết cơ sở trên trang danh sách</span></label>
+    <input id="cfgListing" type="text" />
+    <label><span data-i18n="k27">XPath phần about-text</span></label>
+    <input id="cfgAbout" type="text" />
+    <label><span data-i18n="k28">XPath phần basic-operations</span></label>
+    <input id="cfgBasic" type="text" />
+    <label><span data-i18n="k29">XPath phần tử cần loại trừ (ngăn bằng |)</span></label>
+    <input id="cfgExclude" type="text" />
+    <div class="hint"><span data-i18n="k30">Các XPath được lưu bằng nút “Lưu cài đặt” ở phía trên. Dùng | để nối nhiều phần tử loại trừ.</span></div>
+  </details>
+
+  <div class="hint"><span data-i18n="k31">Lưu ý: Giữ trình duyệt mở khi thu thập. Đóng bảng điều khiển không dừng tác vụ; tiến độ được lưu để tiếp tục.</span></div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h3>Facebook ID Finder</h3>
+    </div>
+
+    <div id="loading" class="state-box">🔄 正在解析页面数据...</div>
+    <div id="error" class="state-box error"></div>
+    <div id="noData" class="state-box">❌ 未能识别有效的 ID</div>
+
+    <div id="result" class="result-container" style="display: none;">
+      <div class="input-group">
+        <label>数字 ID (Numeric ID)</label>
+        <div class="copy-field">
+          <input type="text" id="facebookID" readonly>
+          <button id="copyBtn" class="btn-copy">复制</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>快速访问链接 (Profile URL)</label>
+        <div class="copy-field">
+          <input type="text" id="facebookURL" readonly>
+          <button id="copyURLBtn" class="btn-copy">复制</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label>当前页面 URL</label>
+        <div class="copy-field">
+          <input type="text" id="pageURL" readonly>
+          <button id="copyPageURLBtn" class="btn-copy">复制</button>
+        </div>
+      </div>
+      
+      <!-- 动态验证状态区域 -->
+      <div id="dynamicVerifyStatus"></div>
+    </div>
+
+    <div class="footer">
+      <button id="refreshBtn" class="btn-secondary">🔄 刷新抓取</button>
+      <button id="helpBtn" class="btn-secondary">❓ 帮助</button>
+    </div>
+  </div>
+
+  <!-- 帮助模态框 -->
+  <div id="helpModal" class="modal">
+    <div class="modal-content">
+      <h4>使用说明</h4>
+      <p>1. 打开任何 Facebook 个人主页、公共主页或小组。</p>
+      <p>2. 点击本插件图标，即可自动提取该实体的数字 ID。</p>
+      <p>3. <b>验证通过</b> 表示该 ID 经 Facebook 服务器确认 100% 正确。</p>
+      <button class="close">关闭</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
