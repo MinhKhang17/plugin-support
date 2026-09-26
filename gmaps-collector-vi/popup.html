@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Google Maps Collector</title>
+  <style>
+    :root { color-scheme: dark; --bg:#10131c; --panel:#191e2b; --panel2:#22293a; --line:#30394e; --text:#edf1fa; --muted:#9aa6bd; --blue:#5795ff; --green:#35c982; --red:#ff6b6b; }
+    * { box-sizing:border-box; }
+    body { width:420px; max-height:680px; overflow:auto; margin:0; background:var(--bg); color:var(--text); font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    header { padding:16px 18px 13px; background:linear-gradient(130deg,#1b2944,#151923); border-bottom:1px solid var(--line); }
+    h1 { margin:0; font-size:16px; } header p { margin:4px 0 0; color:var(--muted); font-size:11px; }
+    main { padding:14px 18px 18px; }
+    label { display:block; margin:11px 0 5px; font-weight:650; }
+    input[type=text], textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 10px; color:var(--text); background:var(--panel); font:inherit; outline:none; }
+    input:focus, textarea:focus { border-color:var(--blue); }
+    textarea { min-height:83px; resize:vertical; }
+    .hint { margin-top:4px; color:var(--muted); font-size:10.5px; }
+    .file-row { display:flex; align-items:center; gap:9px; margin-top:7px; }
+    input[type=file] { width:100%; color:var(--muted); font-size:11px; }
+    .file-name { margin-top:3px; color:var(--green); font-size:10.5px; }
+    .notice { display:none; padding:8px 10px; margin:11px 0; border:1px solid #735c21; border-radius:8px; background:#332a17; color:#f3d689; font-size:11px; }
+    .notice.show { display:block; }
+    .status { margin-top:13px; padding:10px; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+    .status-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    #status-text { font-weight:650; }
+    #counts { color:var(--muted); white-space:nowrap; font-size:11px; }
+    .progress { height:5px; margin-top:8px; border-radius:6px; background:var(--panel2); overflow:hidden; }
+    #progress-bar { height:100%; width:0; background:linear-gradient(90deg,var(--blue),#8a6bff); transition:width .25s; }
+    .buttons { display:flex; gap:8px; margin-top:12px; }
+    button { border:0; border-radius:8px; padding:9px 10px; color:white; background:var(--panel2); font:600 12px system-ui,sans-serif; cursor:pointer; }
+    button:disabled { opacity:.42; cursor:not-allowed; }
+    .primary { flex:1; background:linear-gradient(135deg,#4389f6,#5a68e9); }
+    .danger { color:#ffdede; background:#552a35; }
+    .secondary { color:var(--text); border:1px solid var(--line); }
+    .exports { display:flex; gap:8px; margin-top:9px; }
+    .exports button { flex:1; color:#bcebd4; border:1px solid #285b47; background:#18352b; }
+    .section-title { margin:16px 0 7px; color:#bac6db; font-size:11px; font-weight:700; }
+    #area-list { max-height:155px; overflow:auto; }
+    .area { display:flex; align-items:center; justify-content:space-between; gap:9px; padding:7px 8px; margin-bottom:5px; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
+    .area-info { min-width:0; }
+    .area-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+    .area-meta { color:var(--muted); font-size:10px; }
+    .area button { padding:5px 8px; font-size:10px; }
+    .empty { padding:11px; color:var(--muted); text-align:center; border:1px dashed var(--line); border-radius:8px; font-size:11px; }
+    .foot { margin-top:11px; color:var(--muted); font-size:10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📍 Google Maps Collector</h1>
+    <p>Tự tìm kiếm và thu thập dữ liệu theo từng khu vực</p>
+  </header>
+  <main>
+    <label for="keyword">Từ khóa</label>
+    <input id="keyword" type="text" placeholder="Ví dụ: nha khoa, quán cà phê">
+
+    <label for="areas">Danh sách khu vực</label>
+    <textarea id="areas" placeholder="Ví dụ: Cần Thơ, Vĩnh Long, Trà Vinh"></textarea>
+    <div class="hint">Ngăn cách bằng dấu phẩy hoặc xuống dòng. Có thể dán nhiều khu vực.</div>
+
+    <div class="file-row"><input id="csv-file" type="file" accept=".csv,text/csv"></div>
+    <div class="file-name" id="file-name"></div>
+    <div class="hint">Hoặc nhập CSV: mỗi dòng một khu vực; công cụ ưu tiên cột có tên “Khu vực/Area”.</div>
+
+    <div class="notice" id="notice"></div>
+
+    <div class="status">
+      <div class="status-top"><span id="status-text">Sẵn sàng</span><span id="counts">0 khu vực · 0 địa điểm</span></div>
+      <div class="progress"><div id="progress-bar"></div></div>
+    </div>
+
+    <div class="buttons">
+      <button class="primary" id="start-btn">▶ Bắt đầu cào</button>
+      <button class="danger" id="stop-btn" disabled>Dừng</button>
+      <button class="secondary" id="clear-btn">Xóa dữ liệu</button>
+    </div>
+    <div class="exports">
+      <button id="export-all-btn" disabled>⬇ Xuất CSV tổng hợp</button>
+    </div>
+
+    <div class="section-title">Kết quả theo khu vực</div>
+    <div id="area-list"><div class="empty">Chưa có dữ liệu. Nhập từ khóa và khu vực để bắt đầu.</div></div>
+    <div class="foot">Giữ tab Google Maps mở trong khi công cụ chạy. Dữ liệu đã cào được lưu lại nếu bạn đóng cửa sổ tiện ích.</div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
