@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><title>Business Contacts</title><link rel="stylesheet" href="style.css"></head>
+<body><main><header><span>FACEBOOK PAGES</span><h1>Business Contacts</h1><p>Lấy thông tin liên hệ công khai của fanpage doanh nghiệp.</p></header>
+<section><h2>1. Danh sách đang theo dõi</h2><p>Mở danh sách Following trên Facebook, sau đó chọn tab bên dưới. Danh sách thu được có thể gồm liên kết ngoài vùng Following: hãy kiểm tra trước khi chọn.</p>
+<div class="bar"><select id="source"></select><button id="refresh">Làm mới tab</button><button id="capture">Thu thập danh sách</button></div>
+<label>Số lượt cuộn tối đa <input id="scrolls" type="number" min="1" max="300" value="40"></label>
+<p class="muted">Dừng sau 5 lượt không có mục mới. Chỉ lấy những mục Facebook hiển thị; không bảo đảm toàn bộ danh sách.</p></section>
+<section><h2>2. Chọn fanpage doanh nghiệp</h2><p>Đánh dấu các fanpage doanh nghiệp cần xử lý. Hồ sơ cá nhân và trang chưa xác minh được loại hình sẽ không được lấy thông tin liên hệ.</p>
+<div class="bar"><input id="filter" placeholder="Lọc tên hoặc liên kết"><button id="select">Chọn mục đang lọc</button><button id="unselect">Bỏ chọn tất cả</button></div>
+<div class="bar"><button id="run" class="primary">Quét các fanpage đã chọn</button><button id="stop" disabled>Dừng</button><button id="export">Xuất CSV</button><button id="reset">Xóa dữ liệu</button></div>
+<p id="status" role="status">Sẵn sàng.</p><p class="muted">Giữ tab công cụ mở khi chạy. Kết quả được lưu trên máy sau mỗi trang; mở lại và bấm quét để tiếp tục các mục chưa hoàn tất. Mỗi lần mở trang cách nhau tối thiểu 15 giây.</p>
+<div class="table"><table><thead><tr><th>Select</th><th>Name</th><th>FacebookURL</th><th>Address</th><th>Phone</th><th>Email</th><th>Progress</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+<footer>CSV: Name,FacebookURL,Address,Phone,Email. Không gửi dữ liệu đến máy chủ bên ngoài. Không tự nhấn Follow, gửi tin nhắn hoặc xử lý CAPTCHA.</footer>
+</main><script src="shared.js"></script><script src="dashboard.js"></script></body></html>

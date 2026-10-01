@@ -1,0 +1,20 @@
+browser:
+  headless: false
+  scroll_pause: 1.2
+  max_scrolls: 60
+  no_growth_limit: 7
+
+download:
+  workers: 8
+  timeout: 15
+  retries: 2
+  candidate_multiplier: 4
+
+images:
+  min_width: 250
+  min_height: 250
+  jpeg_quality: 92
+
+output:
+  root: dataset/images
+  metadata: dataset/metadata.csv
