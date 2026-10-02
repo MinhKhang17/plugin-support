@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "FB Page Info Scraper",
+  "version": "2.2.0",
+  "description": "5 luồng độc lập, cào email/phone/Instagram, không nhảy sang trang cá nhân của bạn",
+  "permissions": ["tabs", "scripting", "storage"],
+  "host_permissions": ["https://www.facebook.com/*", "https://m.facebook.com/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html" }
+}

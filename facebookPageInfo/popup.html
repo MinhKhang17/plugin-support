@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { width: 360px; font-family: system-ui, sans-serif; padding: 12px; margin: 0; }
+    h3 { margin: 0 0 8px; font-size: 15px; color: #1877f2; }
+    textarea { width: 100%; height: 120px; box-sizing: border-box; font-size: 12px; border: 1px solid #ccd; border-radius: 6px; padding: 8px; resize: vertical; }
+    .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+    label { font-size: 13px; white-space: nowrap; }
+    select { flex: 1; padding: 6px; border-radius: 6px; border: 1px solid #ccd; }
+    button { width: 100%; margin-top: 6px; padding: 9px; cursor: pointer; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; }
+    #btnStart { background: #1877f2; color: #fff; }
+    #btnStart:hover:not(:disabled) { background: #166fe5; }
+    #btnStop { background: #e41e3f; color: #fff; }
+    #btnExport { background: #42b72a; color: #fff; }
+    #btnReset { background: #f0f2f5; color: #050505; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #status { font-size: 12px; color: #555; margin-top: 10px; line-height: 1.4; }
+    #bar { height: 8px; background: #e4e6eb; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+    #fill { height: 100%; width: 0; background: #1877f2; transition: width .3s; border-radius: 4px; }
+    .hint { font-size: 11px; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h3>FB Page Info Scraper v2</h3>
+  <textarea id="urls" placeholder="Dán danh sách link Facebook, mỗi dòng một link.&#10;Để trống + bấm Bắt đầu = tiếp tục danh sách đang dở."></textarea>
+  <div class="row">
+    <label for="concurrency">Tab song song:</label>
+    <select id="concurrency">
+      <option value="1">1 tab (an toàn nhất)</option>
+      <option value="2">2 tab</option>
+      <option value="3">3 tab</option>
+      <option value="4">4 tab</option>
+      <option value="5" selected>5 tab (nhanh nhất)</option>
+    </select>
+  </div>
+  <p class="hint">Nhiều tab hơn = nhanh hơn nhưng dễ bị checkpoint hơn. Nên dùng 3–5.</p>
+  <button id="btnStart">Bắt đầu / Tiếp tục</button>
+  <button id="btnStop" disabled>Dừng</button>
+  <button id="btnExport" disabled>Xuất CSV (0)</button>
+  <button id="btnReset">Xóa dữ liệu &amp; làm lại</button>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="status">Trạng thái: Sẵn sàng</div>
+  <script src="popup.js"></script>
+</body>
+</html>

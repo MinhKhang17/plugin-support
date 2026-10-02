@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head><body>
+<h2>🐶 Puppy Site Auditor</h2><textarea id="urls" placeholder="One URL per line"></textarea>
+<div class="settings"><label><input type="checkbox" id="auto"> Auto-continue</label><label>Wait before scan <input type="number" id="loadWait" min="0" step="500" value="2500"> ms</label><label>Wait after result <input type="number" id="resultWait" min="0" step="500" value="5000"> ms</label></div>
+<div class="row"><button id="start">Start</button><button id="pause">Pause</button><button id="next">Next</button><button id="stop">Stop</button></div>
+<div id="progress">0 / 0</div><progress id="bar" max="100" value="0"></progress>
+<div class="card"><b>Current website</b><div id="current">—</div><div id="status">Idle</div>
+<label><input type="checkbox" id="dog"> Related to dogs</label><button id="override">Save checkbox override</button></div>
+<div class="stats"><span id="yes">Dog: 0</span><span id="no">Non-dog: 0</span></div>
+<button id="csv">Export CSV</button><script src="app.js"></script></body></html>
