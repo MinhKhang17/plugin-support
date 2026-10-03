@@ -1,26 +1,31 @@
-import {normalizeURL,recoveryURLs,uniq,primaryEmail,facebookURL,numericFacebookID} from './core.mjs';
+import {normalizeURL,recoveryURLs,uniq,primaryEmail,facebookURL,numericFacebookID,instagramURL} from './core.mjs';
 import {scanPage,scanFacebookID} from './extract.mjs';
 
 export class Paused extends Error {}
 export class Blocked extends Error {}
 export const emptyResult=record=>({SourceRow:record.row,Name:record.name,Area:record.area,Website:record.original,
   ResolvedURL:'',Email:'',Gmail:'',Phone:'',AllEmails:'',AllPhones:'',FacebookURL:'',FacebookID:'',FacebookIDStatus:'',
-  FacebookIDCandidates:'',FacebookSource:'',FacebookMethod:'',FacebookSearchStatus:'',EmailSource:'',PhoneSource:'',Status:'Chờ xử lý',Notes:''});
+  FacebookIDCandidates:'',FacebookSource:'',FacebookMethod:'',FacebookSearchStatus:'',InstagramURL:'',InstagramSource:'',InstagramSearchStatus:'',EmailSource:'',PhoneSource:'',Status:'Chờ xử lý',Notes:''});
 export const headers=Object.keys(emptyResult({row:0,name:'',area:'',original:''}));
 
 export class Runner {
-  constructor(onChange) {this.onChange=onChange;this.running=false;this.tabId=null;this.controller=null;this.state=null;this.workers=[];}
+  constructor(onChange) {this.onChange=onChange;this.running=false;this.tabId=null;this.controller=null;this.state=null;this.workers=[];this.saveCounter=0;}
   async load() {
     const {contactJob}=await chrome.storage.local.get('contactJob');
-    this.state=contactJob||{records:[],results:[],index:0,partial:null,activeUrls:[],visitedUrls:[],manualEdits:{},settings:{delay:4,timeout:30,maxContact:3,maxFacebookPages:12,parallel:3,active:true,pauseOnBlock:true},status:'Sẵn sàng',log:[]};
-    this.state.settings={delay:4,timeout:30,maxContact:3,maxFacebookPages:12,parallel:3,active:true,pauseOnBlock:true,...this.state.settings};
+    this.state=contactJob||{records:[],results:[],index:0,partial:null,activeUrls:[],visitedUrls:[],manualEdits:{},settings:{delay:1,timeout:30,maxContact:3,maxFacebookPages:12,parallel:3,active:true,pauseOnBlock:true,fastMode:false,forceFacebookID:false,socialSearch:'facebook'},status:'Sẵn sàng',log:[]};
+    this.state.settings={delay:1,timeout:30,maxContact:3,maxFacebookPages:12,parallel:3,active:true,pauseOnBlock:true,fastMode:false,forceFacebookID:false,socialSearch:'facebook',...this.state.settings};
     this.state.activeUrls=[];
     this.state.visitedUrls=this.state.visitedUrls||[];
     this.state.manualEdits=this.state.manualEdits||{};
     if(this.state.status==='Đang chạy')this.state.status='Đã tạm dừng — nhấn Tiếp tục';
     this.onChange(this.state);return this.state;
   }
-  async save() {await chrome.storage.local.set({contactJob:this.state});this.onChange(this.state);}
+  async save(force=false) {
+    this.onChange(this.state);
+    if(this.running&&!force&&++this.saveCounter%5!==0)return;
+    await chrome.storage.local.set({contactJob:this.state});
+    if(force)this.saveCounter=0;
+  }
   // Progress is represented by the active URLs and counters; do not retain a
   // navigation log, which made the dashboard unnecessarily tall and noisy.
   log(text) {}
@@ -74,7 +79,7 @@ export class Runner {
     worker.onNavigate=url=>{
       worker.currentURL=url;
       this.state.activeUrls=this.workers.map(w=>w.currentURL).filter(Boolean);
-      void this.save();
+      this.onChange(this.state);
     };
     worker.onVisit=url=>this.trackVisited(url);
     return worker;
@@ -89,25 +94,26 @@ export class Runner {
     }
     try {await this.bounded(chrome.tabs.get(this.tabId));}catch(e){if(e instanceof Paused)throw e;this.tabId=null;throw new Paused('Tab thu thập đã đóng. Nhấn Tiếp tục để tạo tab mới.');}
     await this.bounded(chrome.tabs.update(this.tabId,{url,active:this.state.settings.active}));
-    const deadline=Date.now()+this.state.settings.timeout*1000;
+    const timeout=this.state.settings.fastMode?Math.min(5,Math.max(3,Number(this.state.settings.timeout)||5)):this.state.settings.timeout;
+    const deadline=Date.now()+timeout*1000;
     while(Date.now()<deadline) {
-      this.check();await this.wait(350);
+      this.check();await this.wait(150);
       let tab;try{tab=await this.bounded(chrome.tabs.get(this.tabId));}catch(e){if(e instanceof Paused)throw e;this.tabId=null;throw new Paused('Tab thu thập đã đóng.');}
       if(tab.status==='complete' && tab.url && tab.url!=='about:blank') {
-        await this.wait(1200);return tab.url;
+        await this.wait(250);return tab.url;
       }
     }
-    throw new Error('Trang tải quá '+this.state.settings.timeout+' giây');
+    throw new Error('Trang tải quá '+timeout+' giây');
   }
-  async inject(func) {
-    const data=await this.bounded(chrome.scripting.executeScript({target:{tabId:this.tabId},func}),18000);
+  async inject(func,args=[]) {
+    const data=await this.bounded(chrome.scripting.executeScript({target:{tabId:this.tabId},func,args}),18000);
     this.check();
     if(!data[0]?.result)throw new Error('Không đọc được nội dung trang');
     return data[0].result;
   }
   async visit(url) {
     await this.navigate(url);
-    const result=await this.inject(scanPage);
+    const result=await this.inject(scanPage,[Boolean(this.state.settings.fastMode)]);
     if(result.blocked)throw new Blocked(result.reason+' · '+result.url);
     if(result.error)throw new Error(result.reason);
     return result;
@@ -115,10 +121,16 @@ export class Runner {
   async process(record) {
     const result=emptyResult(record);this.state.partial=result;
     if(!record.url) {result.Status=record.original?'URL không hợp lệ':'Không có website';return result;}
-    let emails=[],phones=[],emailSources=new Map(),phoneSources=new Map(),fbLinks=[],contacts=[],facebookPages=[];
-    const fbEvidence=new Map();
+    let emails=[],phones=[],emailSources=new Map(),phoneSources=new Map(),fbLinks=[],instagramLinks=[],contacts=[],facebookPages=[];
+    const fbEvidence=new Map(),instagramEvidence=new Map();
     let successfulPages=0;
     const notes=[];
+    const pageDelay=()=>this.state.settings.parallel>1?Math.min(Number(this.state.settings.delay)||0,0.25):Number(this.state.settings.delay)||0;
+    const fastMode=Boolean(this.state.settings.fastMode);
+    const socialSearch=['facebook','instagram','both'].includes(this.state.settings.socialSearch)?this.state.settings.socialSearch:'facebook';
+    const wantsFacebook=socialSearch==='facebook'||socialSearch==='both';
+    const wantsInstagram=socialSearch==='instagram'||socialSearch==='both';
+    const hasContactData=()=>emails.length>0&&phones.length>0;
     const hostOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';}};
     const checkpoint=async()=>{
       result.Email=primaryEmail(emails,result.ResolvedURL||record.url);
@@ -136,6 +148,7 @@ export class Runner {
       emails=uniq(emails);phones=uniq(phones);
       for(const link of page.links||[]) {
         const fb=facebookURL(link.url);if(fb)fbLinks.push(fb);
+        const instagram=instagramURL(link.url);if(instagram)instagramLinks.push(instagram);
         if(hostOf(link.url)===hostOf(page.url) && /contact|about|lien.he|liên hệ|gioi.thieu|giới thiệu|impressum|kontakt/i.test(link.text+' '+link.url)) {
           const url=normalizeURL(link.url);if(url)contacts.push(url);
         }
@@ -148,7 +161,12 @@ export class Runner {
         fbLinks.push(fb);
         if(!fbEvidence.has(fb))fbEvidence.set(fb,{source:page.url,method:signal.method||'link'});
       }
-      fbLinks=uniq(fbLinks);contacts=uniq(contacts);facebookPages=uniq(facebookPages);
+      for(const signal of page.instagramSignals||[]) {
+        const instagram=instagramURL(signal.url);if(!instagram)continue;
+        instagramLinks.push(instagram);
+        if(!instagramEvidence.has(instagram))instagramEvidence.set(instagram,{source:page.url,method:signal.method||'link'});
+      }
+      fbLinks=uniq(fbLinks);instagramLinks=uniq(instagramLinks);contacts=uniq(contacts);facebookPages=uniq(facebookPages);
       await checkpoint();
     };
     const attempt=async url=>{
@@ -164,53 +182,64 @@ export class Runner {
     };
     try {
       const directFB=facebookURL(record.url);
+      const directInstagram=instagramURL(record.url);
       const visited=new Set();
       if(directFB) {fbLinks=[directFB];result.FacebookSearchStatus='URL Facebook được nhập trực tiếp';}
-      else {
+      if(directInstagram) {instagramLinks=[directInstagram];result.InstagramSearchStatus='URL Instagram được nhập trực tiếp';}
+      if(!directFB&&!directInstagram) {
         let page=null;
-        for(const url of recoveryURLs(record.url)) {
+        for(const url of recoveryURLs(record.url).slice(0,fastMode?2:4)) {
           this.check();visited.add(url);page=await attempt(url);
           if(page){result.ResolvedURL=page.url;await merge(page);break;}
-          await this.wait(this.state.settings.delay*1000);
+          await this.wait(pageDelay()*1000);
         }
-        if(page) {
+        if(page&&!hasContactData()) {
           const root=new URL('/',page.url).href;
           // Trang gốc cũng được đọc khi URL đầu vào là /contact-us/ nhưng còn thiếu liên hệ.
-          if(!visited.has(root)&&root!==page.url) {
-            await this.wait(this.state.settings.delay*1000);visited.add(root);
+          if(!emails.length||!phones.length) {
+            if(!visited.has(root)&&root!==page.url) {
+            await this.wait(pageDelay()*1000);visited.add(root);
             const home=await attempt(root);if(home)await merge(home);
+            }
           }
-          contacts=uniq(contacts).sort((a,b)=>(/contact|kontakt|lien.he/i.test(b)?1:0)-(/contact|kontakt|lien.he/i.test(a)?1:0));
-          let count=0;
-          for(const contact of contacts) {
-            if(count>=this.state.settings.maxContact||(emails.length&&phones.length))break;
-            if(visited.has(contact))continue;
-            visited.add(contact);count++;
-            await this.wait(this.state.settings.delay*1000);
-            const p=await attempt(contact);if(p)await merge(p);
+          if(!fastMode&&!hasContactData()) {
+            contacts=uniq(contacts).sort((a,b)=>(/contact|kontakt|lien.he/i.test(b)?1:0)-(/contact|kontakt|lien.he/i.test(a)?1:0));
+            let count=0;
+            for(const contact of contacts) {
+              if(count>=Math.min(this.state.settings.maxContact,3)||hasContactData())break;
+              if(visited.has(contact))continue;
+              visited.add(contact);count++;
+              await this.wait(pageDelay()*1000);
+              const p=await attempt(contact);if(p)await merge(p);
+            }
           }
         }
       }
       // Facebook discovery is deliberately independent of contact completeness.
       // Scan relevant internal pages even after email + phone are already found.
-      if(!directFB) {
+      if(wantsFacebook&&!fastMode&&!directFB&&!hasContactData()&&!fbLinks.length) {
         let checked=0;
         for(const candidate of facebookPages) {
           if(checked>=this.state.settings.maxFacebookPages||visited.has(candidate))continue;
           visited.add(candidate);checked++;
-          await this.wait(this.state.settings.delay*1000);
+          await this.wait(pageDelay()*1000);
           const p=await attempt(candidate);if(p)await merge(p);
+          if(fbLinks.length)break;
         }
         result.FacebookSearchStatus=fbLinks.length?'Tìm thấy sau khi quét '+checked+' trang nội bộ':'Không tìm thấy sau khi quét '+checked+' trang nội bộ công khai';
+      } else if(wantsFacebook&&!fastMode&&!directFB&&fbLinks.length) {
+        result.FacebookSearchStatus='Tìm thấy link Facebook trên trang đã truy cập';
+      } else if(fastMode) {
+        result.FacebookSearchStatus='Bỏ qua do Fast mode';
       }
-      if(fbLinks.length) {
+      if(wantsFacebook&&!fastMode&&fbLinks.length&&(!hasContactData()||this.state.settings.forceFacebookID)) {
         result.FacebookURL=fbLinks[0];
         const evidence=fbEvidence.get(fbLinks[0]);
         result.FacebookSource=evidence?.source||result.ResolvedURL||record.url;
         result.FacebookMethod=evidence?.method||'URL đầu vào / link chuẩn';
       }
       // Tiếp tục Facebook nếu còn thiếu một trong hai trường email / điện thoại.
-      if((!emails.length||!phones.length)&&fbLinks.length) {
+      if(wantsFacebook&&!fastMode&&fbLinks.length&&(!hasContactData()||this.state.settings.forceFacebookID)) {
         const visitedFB=[],ids=[],idMethods=[],candidateIDs=[];
         for(const fb of fbLinks.slice(0,2)) {
           visitedFB.push(fb);result.FacebookURL=visitedFB.join('; ');
@@ -224,7 +253,7 @@ export class Runner {
             fbPages.push(u.href);
           }
           for(const fbPage of fbPages) {
-            await this.wait(this.state.settings.delay*1000);
+            await this.wait(pageDelay()*1000);
             const p=await attempt(fbPage);
             if(!p)continue;
             canonical=facebookURL(p.url)||canonical;
@@ -241,7 +270,7 @@ export class Runner {
           // Chỉ xác nhận ứng viên nếu chuyển hướng khớp chính xác trang Facebook nguồn.
           if(!pageID && canonical && !numericFacebookID(canonical)) {
             for(const id of candidates.slice(0,2)) {
-              await this.wait(this.state.settings.delay*1000);
+              await this.wait(pageDelay()*1000);
               let resolved;
               try {resolved=await this.navigate('https://www.facebook.com/profile.php?id='+id);}
               catch(e){if(e instanceof Paused)throw e;continue;}
@@ -262,6 +291,27 @@ export class Runner {
           if(emails.length&&phones.length)break;
         }
       }
+      // Instagram profile pages often put public email/phone in the bio. Unlike
+      // Facebook they have no reliable public "About" URL, so scan each profile once.
+      if(wantsInstagram&&!fastMode&&instagramLinks.length&&!hasContactData()) {
+        const visitedInstagram=[];
+        for(const instagram of instagramLinks.slice(0,2)) {
+          visitedInstagram.push(instagram);result.InstagramURL=visitedInstagram.join('; ');
+          const evidence=instagramEvidence.get(instagram);
+          if(!result.InstagramSource)result.InstagramSource=evidence?.source||result.ResolvedURL||record.url;
+          await this.wait(pageDelay()*1000);
+          const p=await attempt(instagram);if(p)await merge(p);
+          if(hasContactData())break;
+        }
+        result.InstagramSearchStatus='Đã quét '+visitedInstagram.length+' hồ sơ Instagram công khai';
+      } else if(wantsInstagram&&!fastMode&&instagramLinks.length) {
+        result.InstagramURL=instagramLinks[0];
+        const evidence=instagramEvidence.get(instagramLinks[0]);
+        result.InstagramSource=evidence?.source||result.ResolvedURL||record.url;
+        result.InstagramSearchStatus='Tìm thấy link Instagram trên trang đã truy cập';
+      } else if(wantsInstagram&&fastMode) {
+        result.InstagramSearchStatus='Bỏ qua do Fast mode';
+      }
       await checkpoint();
       result.Status=emails.length&&phones.length?'Có email và điện thoại':emails.length?'Chỉ tìm thấy email':phones.length?'Chỉ tìm thấy điện thoại':result.FacebookID?'Chỉ tìm thấy Facebook ID':successfulPages?'Chưa tìm thấy liên hệ':'Không truy cập được';
       return result;
@@ -275,15 +325,24 @@ export class Runner {
     if(this.running)return;
     if(!this.state.records.length)throw new Error('Chưa có danh sách website.');
     this.running=true;this.controller=new AbortController();this.state.status='Đang chạy';
-    this.onNavigate=url=>{this.state.activeUrls=[url];void this.save();};
+    this.onNavigate=url=>{this.state.activeUrls=[url];this.onChange(this.state);};
     this.onVisit=url=>this.trackVisited(url);
     try {
-      await this.save();
+      await this.save(true);
       const cache=new Map();
       for(let i=0;i<this.state.index;i++) {
         const r=this.state.results[i];if(r && this.state.records[i].url && !/lỗi|không truy cập|thủ công|bỏ qua|tạm dừng/i.test(r.Status))cache.set(this.state.records[i].url,r);
       }
-      const limit=Math.max(1,Math.min(5,Number(this.state.settings.parallel)||1));
+      const limit=Math.max(1,Math.min(12,Number(this.state.settings.parallel)||1));
+      const rowDelay=()=>limit>1?Math.min(Number(this.state.settings.delay)||0,0.25):Number(this.state.settings.delay)||0;
+      const domainActive=new Map(),domainLimit=3;
+      const domainOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';}};
+      const acquireDomain=async domain=>{
+        if(!domain)return;
+        while((domainActive.get(domain)||0)>=domainLimit){this.check();await this.wait(100);}
+        domainActive.set(domain,(domainActive.get(domain)||0)+1);
+      };
+      const releaseDomain=domain=>{if(!domain)return;const active=(domainActive.get(domain)||1)-1;if(active)domainActive.set(domain,active);else domainActive.delete(domain);};
       let cursor=this.state.index;
       const finish=async(i,result)=>{
         this.state.results[i]=result;this.state.partial=null;
@@ -293,33 +352,39 @@ export class Runner {
       };
       const take=()=>cursor<this.state.records.length?cursor++:-1;
       const runOne=async()=>{
-        for(;;) {
-          this.check();const i=take();if(i<0)return;
-          const record=this.state.records[i];let result;
-          if(record.url&&cache.has(record.url)) {
-            result={...cache.get(record.url),SourceRow:record.row,Name:record.name,Area:record.area,Website:record.original};
-            result.Notes=(result.Notes?result.Notes+' | ':'')+'Dùng lại kết quả URL trùng trong danh sách';
-          } else {
-            // Preserve the original runner path for one tab (including resume and
-            // test subclasses); additional slots use isolated tab workers.
-            const worker=limit===1?this:this.makeWorker();
-            if(worker!==this)this.workers.push(worker);
-            try {result=await worker.process(record);}
-            catch(e) {
-              if(e instanceof Paused||e instanceof Blocked)throw e;
-              result=worker.state.partial||emptyResult(record);result.Status='Lỗi';result.Notes=e.message;
-            } finally {
-              if(worker!==this) {
-                this.workers=this.workers.filter(w=>w!==worker);
-                this.state.activeUrls=this.workers.map(w=>w.currentURL).filter(Boolean);
-                if(worker.tabId!==null)try{await chrome.tabs.remove(worker.tabId);}catch{}
+        const worker=limit===1?this:this.makeWorker();
+        if(worker!==this)this.workers.push(worker);
+        try {
+          for(;;) {
+            this.check();const i=take();if(i<0)return;
+            const record=this.state.records[i];let result;
+            const cached=record.url&&cache.has(record.url),domain=cached?'':domainOf(record.url);
+            await acquireDomain(domain);
+            try {
+              if(cached) {
+                result={...cache.get(record.url),SourceRow:record.row,Name:record.name,Area:record.area,Website:record.original};
+                result.Notes=(result.Notes?result.Notes+' | ':'')+'Dùng lại kết quả URL trùng trong danh sách';
+              } else {
+                try {result=await worker.process(record);}
+                catch(e) {
+                  if(e instanceof Paused||e instanceof Blocked)throw e;
+                  result=worker.state.partial||emptyResult(record);result.Status='Lỗi';result.Notes=e.message;
+                }
+                result=this.applyManual(i,result);
+                if(record.url&&!/lỗi|không truy cập|thủ công/i.test(result.Status))cache.set(record.url,result);
               }
+            } finally {
+              releaseDomain(domain);
             }
-            result=this.applyManual(i,result);
-            if(record.url&&!/lỗi|không truy cập|thủ công/i.test(result.Status))cache.set(record.url,result);
+            await finish(i,result);
+            if(cursor<this.state.records.length)await this.wait(rowDelay()*1000);
           }
-          await finish(i,result);
-          if(cursor<this.state.records.length)await this.wait(this.state.settings.delay*1000);
+        } finally {
+          if(worker!==this) {
+            this.workers=this.workers.filter(w=>w!==worker);
+            this.state.activeUrls=this.workers.map(w=>w.currentURL).filter(Boolean);
+            if(worker.tabId!==null)try{await chrome.tabs.remove(worker.tabId);}catch{}
+          }
         }
       };
       await Promise.all(Array.from({length:Math.min(limit,this.state.records.length-this.state.index)},runOne));
@@ -330,7 +395,7 @@ export class Runner {
       this.state.status=e instanceof Blocked?'Cần xử lý thủ công':e instanceof Paused?'Đã tạm dừng':'Lỗi lưu hoặc xử lý';
       this.log(e.message);
     }finally{
-      this.running=false;this.state.activeUrls=[];this.onNavigate=null;this.onVisit=null;await this.save();
+      this.running=false;this.state.activeUrls=[];this.onNavigate=null;this.onVisit=null;await this.save(true);
       // Giữ nguyên tab xác minh để người dùng có thể xử lý thủ công.
       if(this.state.status==='Hoàn tất'&&this.tabId!==null){try{await chrome.tabs.remove(this.tabId);}catch{}this.tabId=null;}
     }

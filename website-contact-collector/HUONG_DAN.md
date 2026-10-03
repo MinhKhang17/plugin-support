@@ -24,11 +24,15 @@ Cũng có thể dán mỗi URL trên một dòng hoặc nhập TXT. CSV dấu ph
 
 ## Luồng xử lý
 
-- Mở URL đã nhập bằng tab trình duyệt riêng; bỏ tham số tracking thông dụng và fragment. Có thể chọn 1–5 website chạy đồng thời; mặc định 3, khuyến nghị 2–3.
+- Mở URL đã nhập bằng tab trình duyệt riêng; bỏ tham số tracking thông dụng và fragment. Có thể chọn 1–12 website chạy đồng thời; mặc định 3, khuyến nghị 4–8. Mặc định nghỉ giữa các trang là 1 giây; có thể đặt 0 để chạy liên tục khi website chịu tải tốt. Nếu Chrome dùng nhiều RAM hoặc website bắt đầu chặn, giảm về 2–3.
+- Khi chạy nhiều luồng, tối đa 3 worker được phép xử lý cùng một hostname để tránh dồn tải vào một website; các worker còn lại xử lý domain khác.
+- **Fast mode** chỉ đọc trang hiện tại và trang gốc, bỏ qua Contact/About và Facebook để ưu tiên tốc độ. Khi Fast mode bật, timeout trang được giới hạn tối đa 5 giây và không lấy Facebook ID.
+- Khi trang đã có email và điện thoại, công cụ dừng mở các trang bổ sung và không dò Facebook. Bật **Bắt buộc lấy Facebook ID** nếu vẫn cần Facebook ID trong trường hợp này.
 - Nếu trang lỗi: thử bỏ query, quay về trang gốc rồi thử biến thể có/không có `www` khi phù hợp. Không xóa tùy tiện đường dẫn trước lần thử đầu.
 - Cuộn đầu trang, giữa trang và cuối trang để kích hoạt nội dung tải chậm. Đọc email/số điện thoại hiển thị, `mailto:`, `tel:`, thông tin có cấu trúc của tổ chức và email công khai được Cloudflare mã hóa.
-- Nếu thiếu email hoặc điện thoại, đọc thêm trang gốc và các link Contact/About/Liên hệ có cùng hostname (có thể khác `www`). Tối đa 3 trang liên hệ theo mặc định, chỉnh được từ 0 đến 6.
-- Nếu vẫn thiếu một trong hai thông tin, tìm link Facebook từ website, bỏ các link chia sẻ bài viết và đăng nhập. Link Facebook có thể nằm trong chữ, icon/ảnh/SVG, `data-*`, `onclick`, URL chuyển hướng hoặc dữ liệu JSON/JavaScript.
+- Email/Gmail và số điện thoại luôn là hai loại dữ liệu bắt buộc cần tìm. Nếu thiếu một trong hai, công cụ đọc thêm trang gốc và các link Contact/About/Liên hệ có cùng hostname (có thể khác `www`). Tối đa 3 trang liên hệ theo mặc định, chỉnh được từ 0 đến 6.
+- Ở **Nguồn mạng xã hội cần dò**, chọn **Facebook**, **Instagram** hoặc **Facebook và Instagram**. Khi còn thiếu email/Gmail hoặc số điện thoại, công cụ mở tối đa 2 hồ sơ công khai từ nguồn đã chọn để tìm dữ liệu. Instagram được ghi ở các cột `InstagramURL`, `InstagramSource` và `InstagramSearchStatus`.
+- Khi chọn Facebook, công cụ tìm link Facebook từ website, bỏ các link chia sẻ bài viết và đăng nhập. Link Facebook có thể nằm trong chữ, icon/ảnh/SVG, `data-*`, `onclick`, URL chuyển hướng hoặc dữ liệu JSON/JavaScript.
 - Lượt dò Facebook chạy độc lập với email/điện thoại: luôn quét trang gốc và các trang nội bộ có khả năng chứa liên kết (About, Contact, Team, Company, Social, Resources…). Điều chỉnh giới hạn 1–20 trang trong ô **Số trang dò Facebook / web**; mặc định 12. CSV ghi URL nguồn, cách phát hiện và trạng thái lượt dò Facebook.
 - Thử tối đa 2 trang Facebook liên kết. Với mỗi trang: đọc trang chính, `/about/`, `/about_contact_and_basic_info/` hoặc tham số `sk` cho `profile.php`. Chỉ dừng tìm liên hệ sớm khi đã có cả email và điện thoại.
 - Facebook ID được lấy theo URL numeric, đối tượng có vanity khớp tên trang hoặc metadata trang. Các trường ID chung trong script chỉ được xem là ứng viên; thử tối đa 2 ứng viên, xác minh qua chuyển hướng khớp chính xác URL trang.

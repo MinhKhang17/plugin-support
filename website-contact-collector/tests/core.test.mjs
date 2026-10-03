@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseCSV,normalizeURL,recoveryURLs,makeRecords,detectWebsiteColumn,csvString,facebookURL,numericFacebookID,primaryEmail} from '../core.mjs';
+import {parseCSV,normalizeURL,recoveryURLs,makeRecords,detectWebsiteColumn,csvString,facebookURL,numericFacebookID,instagramURL,primaryEmail} from '../core.mjs';
 test('CSV BOM, dấu phẩy, dấu nháy và xuống dòng trong một ô',()=>{
   const table=parseCSV('\uFEFFName,Website,Note\r\n"Dog, breeder",https://kennel.test/,"A ""quote""\nnext line"\r\n');
   assert.equal(table.length,2);assert.equal(table[1][0],'Dog, breeder');assert.equal(table[1][2],'A "quote"\nnext line');
@@ -30,8 +30,16 @@ test('Facebook: profile.php, people, numeric, loại share và hostname giả',(
   assert.equal(facebookURL('https://facebook.com.evil.test/Kennel'),'');
   assert.equal(facebookURL('https://www.facebook.com/Kennel/about/?ref=page'),'https://www.facebook.com/Kennel/');
 });
+test('Instagram: chuẩn hóa hồ sơ và bỏ link nội dung hoặc hostname giả',()=>{
+  assert.equal(instagramURL('https://instagram.com/happy.kennel/?utm_source=ig'),'https://www.instagram.com/happy.kennel/');
+  assert.equal(instagramURL('https://www.instagram.com/p/ABC123/'),'');
+  assert.equal(instagramURL('https://instagram.com.evil.test/happykennel'),'');
+});
 test('Chọn email tên miền và xuất CSV chống công thức',()=>{
   assert.equal(primaryEmail(['foo@gmail.com','info@kennel.test'],'https://kennel.test/contact'),'info@kennel.test');
   const csv=csvString([{Phone:'+1 555-123-4567',Name:'=HYPERLINK("bad")'}],['Phone','Name']);
+  assert.ok(csv.startsWith('\uFEFF'));
+  assert.ok(csv.endsWith('\r\n'));
+  assert.equal(csv.includes('\n') && !csv.includes('\r\n'),false);
   const rows=parseCSV(csv);assert.equal(rows[1][0],"'+1 555-123-4567");assert.ok(rows[1][1].startsWith("'="));
 });

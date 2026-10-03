@@ -80,7 +80,7 @@ export function csvString(rows, headers) {
     if (/^[\s]*[=+@-]/.test(s)) s="'"+s;
     return '"'+s.replace(/"/g,'""')+'"';
   };
-  return '\uFEFF'+[headers,...rows.map(r=>headers.map(k=>r[k]??''))].map(r=>r.map(escape).join(',')).join('\r\n');
+  return '\uFEFF'+[headers,...rows.map(r=>headers.map(k=>r[k]??''))].map(r=>r.map(escape).join(',')).join('\r\n')+'\r\n';
 }
 export function primaryEmail(emails, url) {
   let host='';try{host=new URL(url).hostname.replace(/^www\./,'');}catch{}
@@ -116,4 +116,14 @@ export function numericFacebookID(raw) {
   if(parts.length===1 && /^\d{5,}$/.test(parts[0]))return parts[0];
   if(['people','pages'].includes(parts[0]) && /^\d{5,}$/.test(parts[2]||''))return parts[2];
   return '';
+}
+export function instagramURL(raw) {
+  try {
+    const u=new URL(raw);
+    if(!/(^|\.)(instagram\.com|instagr\.am)$/.test(u.hostname))return '';
+    const part=u.pathname.split('/').filter(Boolean)[0]||'';
+    if(!part||/^(accounts|explore|p|reel|reels|stories|direct|about|developer|legal|privacy|terms)$/i.test(part))return '';
+    u.hostname='www.instagram.com';u.protocol='https:';u.pathname='/'+part+'/';u.search='';u.hash='';
+    return u.href;
+  }catch{return '';}
 }

@@ -13,7 +13,12 @@ test('Extractor đọc email hiển thị, mailto, tel và thực hiện cuộn'
   const c=context('https://kennel.test/',{body:'Contact info@kennel.test\nPhone: (212) 555-7890',selectors:{'a[href]':[node({href:'mailto:kennel%40gmail.com?subject=Hello'}),node({href:'tel:+1-212-555-7890'})]}});
   const result=await vm.runInContext('('+scanPage.toString()+')()',c);
   assert.ok(result.emails.includes('info@kennel.test'));assert.ok(result.emails.includes('kennel@gmail.com'));
-  assert.ok(result.phones.includes('+1-212-555-7890'));assert.equal(c.getScrolls(),4);
+  assert.ok(result.phones.includes('+1-212-555-7890'));assert.equal(c.getScrolls(),2);
+});
+test('Extractor Fast mode chỉ cuộn giữa và cuối trang',async()=>{
+  const c=context('https://kennel.test/',{body:'Contact info@kennel.test',selectors:{}});
+  await vm.runInContext('('+scanPage.toString()+')(true)',c);
+  assert.equal(c.getScrolls(),1);
 });
 test('Không lấy email từ script không phải JSON-LD hoặc file ảnh',async()=>{
   const c=context('https://kennel.test/',{body:'logo@2x.png\nhello [at] kennel [dot] test',selectors:{script:[node({},'const x="hidden@tracking.test";')]}});

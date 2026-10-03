@@ -1,5 +1,5 @@
 // Các hàm tự chứa để chrome.scripting.executeScript chạy trong tab đích.
-export async function scanPage() {
+export async function scanPage(fastMode=false) {
   const delay=ms=>new Promise(r=>setTimeout(r,ms));
   const title=(document.title||'').trim();
   const firstText=(document.body?.innerText||'').slice(0,12000);
@@ -16,8 +16,9 @@ export async function scanPage() {
   const errorBody=/\b(ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_TIMED_OUT|DNS_PROBE_FINISHED_NXDOMAIN)\b/.test(firstText)||
     (firstText.length<3500 && /(?:^|\n)\s*(404(?:\s*[-:|]?\s*(?:error|not found|page not found))?|page not found|this page (?:isn.t|is not) available)\s*(?:\n|$)/i.test(firstText));
   if(errorTitle||errorBody) return {url:location.href,error:true,reason:'Trang lỗi hoặc không tồn tại'};
-  const emails=new Set(),phones=new Set(),links=new Map(),facebookSignals=[];
+  const emails=new Set(),phones=new Set(),links=new Map(),facebookSignals=[],instagramSignals=[];
   let staticSourcesCollected=false;
+  const seenAnchors=new WeakSet(),seenData=new WeakSet(),seenCloudflare=new WeakSet(),seenProperties=new WeakSet();
   const emailRx=/[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,24}/g;
   function email(s) {
     for(let v of s.match(emailRx)||[]) {
@@ -52,13 +53,15 @@ export async function scanPage() {
         // Script/meta text is not a URL. Parsing it as a relative URL created
         // enormous bogus URLs on Squarespace (`/Static = window.Static...`).
         const urlLike=/^(?:https?:)?\/\//i.test(value)||allowRelative;
-        if(urlLike)try {const u=new URL(value,location.href);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});}u.searchParams.forEach(v=>values.push(v));}catch{}
+        if(urlLike)try {const u=new URL(value,location.href);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}u.searchParams.forEach(v=>values.push(v));}catch{}
         for(const found of value.match(/(?:https?:\/\/|www\.)[^\s<>"'`]+/gi)||[]) {
-          try {const u=new URL(/^www\./i.test(found)?'https://'+found:found);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});}}catch{}
+          try {const u=new URL(/^www\./i.test(found)?'https://'+found:found);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}}catch{}
         }
       }
     };
     for(const a of document.querySelectorAll('a[href]')) {
+      if(seenAnchors.has(a))continue;
+      seenAnchors.add(a);
       const href=a.getAttribute('href')||'';
       if(/^mailto:/i.test(href)) {
         let v=href.slice(7).split('?')[0];try{v=decodeURIComponent(v);}catch{}
@@ -74,6 +77,8 @@ export async function scanPage() {
     if(!staticSourcesCollected) {
       staticSourcesCollected=true;
       for(const el of document.querySelectorAll('[data-href],[data-url],[data-link],[data-redirect-url],[data-original-url],[data-facebook],[onclick],meta[content]')) {
+        if(seenData.has(el))continue;
+        seenData.add(el);
         const label=(el.innerText||el.getAttribute('aria-label')||el.getAttribute('title')||'').trim();
         for(const attr of ['data-href','data-url','data-link','data-redirect-url','data-original-url','data-facebook','onclick','content'])addLink(el.getAttribute(attr),label,attr==='content'?'meta':'data/onclick');
         const parent=el.closest?.('a,[role="link"]');
@@ -83,10 +88,12 @@ export async function scanPage() {
       // a rendered anchor. Avoid parsing scripts which cannot contain Facebook.
       for(const script of document.querySelectorAll('script:not([src])')) {
         const text=script.textContent||'';
-        if(/(?:facebook\.com|fb\.com|fb\.me)/i.test(text))addLink(text,'',script.type==='application/ld+json'?'JSON-LD':'inline script');
+        if(/(?:facebook\.com|fb\.com|fb\.me|instagram\.com|instagr\.am)/i.test(text))addLink(text,'',script.type==='application/ld+json'?'JSON-LD':'inline script');
       }
     }
     for(const el of document.querySelectorAll('[data-cfemail]')) {
+      if(seenCloudflare.has(el))continue;
+      seenCloudflare.add(el);
       const hex=el.getAttribute('data-cfemail');
       if(!hex||!/^[a-f0-9]+$/i.test(hex)||hex.length%2)continue;
       const k=parseInt(hex.slice(0,2),16);let s='';
@@ -98,8 +105,12 @@ export async function scanPage() {
       if(/©|copyright|isbn|order number|tracking|registration|license/i.test(line))continue;
       for(const m of line.match(phonePattern)||[])phone(m);
     }
-    for(const el of document.querySelectorAll('[itemprop="email"]'))email(el.getAttribute('content')||el.textContent||'');
-    for(const el of document.querySelectorAll('[itemprop="telephone"]'))phone(el.getAttribute('content')||el.textContent||'',true);
+    for(const el of document.querySelectorAll('[itemprop="email"],[itemprop="telephone"]')) {
+      if(seenProperties.has(el))continue;
+      seenProperties.add(el);
+      if(el.getAttribute('itemprop')==='email')email(el.getAttribute('content')||el.textContent||'');
+      else phone(el.getAttribute('content')||el.textContent||'',true);
+    }
     // Chỉ đọc contact của tổ chức trong JSON-LD; bỏ Review/Person phụ trong trang.
     function readLD(obj,depth=0) {
       if(!obj||typeof obj!=='object'||depth>8)return;
@@ -115,11 +126,14 @@ export async function scanPage() {
     }
     for(const s of document.querySelectorAll('script[type="application/ld+json"]'))try{readLD(JSON.parse(s.textContent));}catch{}
   }
-  window.scrollTo(0,0);await delay(600);collect();
-  window.scrollTo(0,Math.floor(document.documentElement.scrollHeight/2));await delay(500);collect();
-  for(let i=0;i<2;i++){window.scrollTo(0,document.documentElement.scrollHeight);await delay(700);collect();}
+  collect();
+  const viewportHeight=window.innerHeight||document.documentElement.clientHeight||1;
+  if(document.documentElement.scrollHeight>viewportHeight*1.2) {
+    window.scrollTo(0,Math.floor(document.documentElement.scrollHeight/(fastMode?2:2)));await delay(fastMode?300:200);collect();
+    if(!fastMode){window.scrollTo(0,document.documentElement.scrollHeight);await delay(350);collect();}
+  }
   if(!(document.body?.innerText||'').trim()&&!links.size&&!emails.size&&!phones.size)return {url:location.href,error:true,reason:'Trang trống hoặc chưa hiển thị được nội dung'};
-  return {url:location.href,title,emails:[...emails].slice(0,50),phones:[...phones].slice(0,30),links:[...links].slice(0,2000).map(([url,text])=>({url,text})),facebookSignals:facebookSignals.slice(0,100)};
+  return {url:location.href,title,emails:[...emails].slice(0,50),phones:[...phones].slice(0,30),links:[...links].slice(0,2000).map(([url,text])=>({url,text})),facebookSignals:facebookSignals.slice(0,100),instagramSignals:instagramSignals.slice(0,100)};
 }
 
 export function scanFacebookID() {

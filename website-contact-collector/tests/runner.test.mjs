@@ -16,10 +16,36 @@ class FixtureRunner extends Runner {
 async function setup(fixtures,records,options={}) {
   store=undefined;const r=new FixtureRunner(fixtures);await r.load();await r.setJob(records,{delay:2,timeout:10,maxContact:3,active:false,pauseOnBlock:true,...options});return r;
 }
-test('URL /contact-us lỗi → trang gốc → đủ email và phone, không mở FB',async()=>{
-  const r=await setup({'https://kennel.test/':page('https://kennel.test/',['contact@kennel.test'],['+1 212-555-7890'],['https://facebook.com/Kennel'])},[row('https://kennel.test/contact-us')]);
+test('URL /contact-us lỗi → trang gốc → đủ email và phone thì dừng',async()=>{
+  const r=await setup({'https://kennel.test/':page('https://kennel.test/',['contact@kennel.test'],['+1 212-555-7890'],['https://facebook.com/Kennel']),'https://www.facebook.com/Kennel/':page('https://www.facebook.com/Kennel/')},[row('https://kennel.test/contact-us')]);
   await r.start();assert.equal(r.state.index,1);assert.equal(r.state.results[0].Email,'contact@kennel.test');assert.equal(r.state.results[0].Status,'Có email và điện thoại');
   assert.deepEqual(r.visits,['https://kennel.test/contact-us','https://kennel.test/']);
+});
+test('Đủ email và phone trên trang hiện tại → dừng, không quét trang gốc hoặc Facebook',async()=>{
+  const contact='https://kennel.test/contact-us';const fb='https://www.facebook.com/Kennel/';
+  const r=await setup({[contact]:page(contact,['contact@kennel.test'],['+1 212-555-7890'],['https://facebook.com/Kennel']),[fb]:page(fb)},[row(contact)]);
+  await r.start();assert.deepEqual(r.visits,[contact]);
+});
+test('Bắt buộc Facebook ID vẫn mở Facebook dù đã đủ email và phone',async()=>{
+  const contact='https://kennel.test/contact-us';const fb='https://www.facebook.com/Kennel/';
+  const r=await setup({[contact]:page(contact,['contact@kennel.test'],['+1 212-555-7890'],['https://facebook.com/Kennel']),[fb]:page(fb)},[row(contact)],{forceFacebookID:true});
+  await r.start();assert.deepEqual(r.visits,[contact,fb]);assert.equal(r.state.results[0].FacebookID,'100123456789');
+});
+test('Fast mode chỉ đọc trang hiện tại và bỏ qua Facebook',async()=>{
+  const root='https://kennel.test/';const fb='https://www.facebook.com/Kennel/';
+  const r=await setup({[root]:page(root,['info@kennel.test'],[],[fb]),[fb]:page(fb),[root+'contact-us']:page(root+'contact-us',[],['+1 212-555-7890'])},[row(root)],{fastMode:true});
+  await r.start();assert.deepEqual(r.visits,[root]);assert.equal(r.state.results[0].FacebookURL,'');
+});
+test('Chế độ Instagram dùng hồ sơ để bổ sung email khi còn thiếu',async()=>{
+  const root='https://kennel.test/',instagram='https://www.instagram.com/happykennel/';
+  const r=await setup({[root]:page(root,[],['+1 212-555-7890'],[instagram]),[instagram]:page(instagram,['hello@gmail.com'])},[row(root)],{socialSearch:'instagram'});
+  await r.start();const out=r.state.results[0];
+  assert.equal(out.Gmail,'hello@gmail.com');assert.equal(out.Phone,'+1 212-555-7890');assert.equal(out.InstagramURL,instagram);assert.deepEqual(r.visits,[root,instagram]);
+});
+test('Chế độ Instagram không mở Facebook',async()=>{
+  const root='https://kennel.test/',instagram='https://www.instagram.com/happykennel/',facebook='https://www.facebook.com/HappyKennel/';
+  const r=await setup({[root]:page(root,[],['+1 212-555-7890'],[facebook,instagram]),[instagram]:page(instagram,['hello@gmail.com']),[facebook]:page(facebook,['wrong@example.test'])},[row(root)],{socialSearch:'instagram'});
+  await r.start();assert.deepEqual(r.visits,[root,instagram]);
 });
 test('Website có phone, tìm email trong Facebook About',async()=>{
   const r=await setup({'https://kennel.test/':page('https://kennel.test/',[],['+1 212-555-7890'],['https://facebook.com/Kennel']),
