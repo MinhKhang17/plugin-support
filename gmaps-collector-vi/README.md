@@ -7,25 +7,29 @@ Tiện ích Chrome Manifest V3 tìm kiếm một từ khóa tại nhiều khu v�
 1. Giải nén gói công cụ vào một thư mục.
 2. Mở `chrome://extensions` trong Chrome và bật **Chế độ dành cho nhà phát triển**.
 3. Chọn **Tải tiện ích đã giải nén** và chọn thư mục chứa `manifest.json`.
-4. Mở tiện ích trên một trang bất kỳ. Nếu tab hiện tại không phải Google Maps, công cụ sẽ tự mở Google Maps khi bắt đầu.
+4. Bấm biểu tượng tiện ích để mở dashboard trong một tab riêng. Google Maps sẽ tự mở khi bắt đầu một pha.
 
 ## Sử dụng
 
 1. Nhập một từ khóa, ví dụ `nha khoa`.
 2. Dán các khu vực, phân tách bằng dấu phẩy hoặc xuống dòng; hoặc chọn tệp CSV.
-3. Nhấn **Bắt đầu cào**. Công cụ lần lượt tìm `từ khóa + khu vực` và tự chuyển sang khu vực tiếp theo.
-4. Mở tiện ích trong lúc chạy để theo dõi tiến độ. Đóng popup không làm dừng lượt cào.
-5. Xuất CSV tổng hợp bằng nút phía trên hoặc xuất CSV riêng ở từng dòng khu vực.
+3. Chạy **Pha 1 – Cào danh sách**. Công cụ chỉ cuộn và chốt tất cả địa điểm kết quả theo từng khu vực, không mở panel chi tiết.
+4. Kiểm tra số lượng kết quả trên dashboard, rồi chạy **Pha 2 – Lấy chi tiết**. Công cụ mở trực tiếp URL của từng địa điểm đã chốt để lấy địa chỉ, website, số điện thoại và tọa độ.
+5. Xuất CSV sau khi pha 2 hoàn tất. Đóng dashboard không làm dừng lượt cào.
 
 Khi cào, tiện ích tự thêm `?hl=en` vào URL Google Maps để giao diện và dữ liệu nguồn được hiển thị bằng tiếng Anh.
 
 ### Định dạng CSV xuất
 
-CSV xuất ra có đúng thứ tự cột sau:
+CSV xuất ra chỉ có đúng các trường và thứ tự sau:
 
 ```csv
-Keyword,Area,Name,Rating,ReviewCount,Category,Address,OpenStatus,Phone,Website,GoogleMapsURL,CollectedAt
+Name,Address,Website,GoogleMapsURL,Rating,Phone,Coordinates
 ```
+
+Tệp dùng mã hóa UTF-8 kèm BOM để Excel trên Windows hiển thị đúng tiếng Việt
+khi mở trực tiếp. Tên cột được giữ ở dạng ASCII để Google Maps/My Maps vẫn dễ
+nhận diện khi import.
 
 ### Định dạng CSV khu vực
 
@@ -41,5 +45,6 @@ Trà Vinh
 ## Ghi chú
 
 - Tối đa 200 khu vực trong một lượt chạy. Lượt cào có thể mất thời gian tùy lượng kết quả và tốc độ tải của Google Maps.
+- Pha 1 không mở địa điểm nên số lượng được chốt trước khi lấy dữ liệu chi tiết. Pha 2 không quay lại hay cuộn lại danh sách: mỗi lượt chỉ mở URL của một địa điểm đã chốt, rồi tiếp tục URL kế tiếp.
 - Dữ liệu thu thập được lưu trong bộ nhớ tiện ích để có thể tiếp tục theo dõi khi đóng popup. Nút **Dừng** giữ lại dữ liệu đã có.
 - Cách Google Maps hiển thị kết quả có thể thay đổi; một số trường thông tin có thể trống nếu không xuất hiện trong thẻ kết quả.

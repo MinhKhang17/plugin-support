@@ -165,17 +165,18 @@ function exportArea(area) {
 }
 
 const CSV_COLUMNS = [
-  ['keyword', 'Keyword'], ['area', 'Area'], ['name', 'Name'], ['rating', 'Rating'],
-  ['reviewCount', 'ReviewCount'], ['category', 'Category'], ['address', 'Address'],
-  ['openStatus', 'OpenStatus'], ['phone', 'Phone'], ['website', 'Website'],
-  ['url', 'GoogleMapsURL'], ['collectedAt', 'CollectedAt'],
+  ['name', 'Name'], ['address', 'Address'], ['website', 'Website'],
+  ['url', 'GoogleMapsURL'], ['rating', 'Rating'], ['phone', 'Phone'], ['coordinates', 'Coordinates'],
 ];
 
 function downloadCSV(data, filename) {
-  const lines = [CSV_COLUMNS.map(([, label]) => csvCell(label)).join(',')];
+  // Keep headers unquoted and ASCII-only for Google Maps/My Maps import.
+  const lines = [CSV_COLUMNS.map(([, label]) => label).join(',')];
   data.forEach((item, index) => {
     lines.push(CSV_COLUMNS.map(([key]) => csvCell(key === 'index' ? index + 1 : item[key])).join(','));
   });
+  // UTF-8 BOM lets Excel on Windows detect Vietnamese characters correctly
+  // when the CSV is opened directly instead of imported through a wizard.
   const blob = new Blob(['\uFEFF', lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   chrome.downloads.download({ url, filename, saveAs: false }, () => {

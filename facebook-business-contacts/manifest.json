@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Facebook Business Contacts",
-  "version": "1.0.0",
-  "description": "Collect publicly displayed business Page contact information and export CSV.",
+  "name": "Facebook Contact Collector",
+  "version": "1.1.0",
+  "description": "Collect publicly displayed Facebook profile and Page information, including Facebook ID, and export CSV.",
   "permissions": ["storage", "scripting"],
   "host_permissions": ["https://www.facebook.com/*"],
   "background": {"service_worker": "background.js"},
-  "action": {"default_title": "Open Business Contacts"}
+  "action": {"default_title": "Open Facebook Contact Collector"}
 }

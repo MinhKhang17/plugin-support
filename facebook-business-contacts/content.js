@@ -24,10 +24,7 @@
       const lines=(box.innerText||'').split('\n').map(x=>x.trim()).filter(Boolean);
       const text=lines.join('\n');
       if(document.querySelector('input[type="password"]')||/\/checkpoint|\/login/.test(location.pathname)||/temporarily blocked|try again later|tạm thời bị chặn|bạn tạm thời bị chặn/i.test(text)) return {state:'blocked'};
-      const category=lines.find(x=>/^(Page|Trang)\s*[·•:—–-]/i.test(x));
-      const business=/breeder|kennel|pet service|pet store|pet supplies|animal shelter|business|company|store|shop|restaurant|hotel|service|retail|product|farm|clinic|real estate|agency|contractor|veterinarian|nhân giống|trại chó|cửa hàng|doanh nghiệp|công ty|dịch vụ|nhà hàng|khách sạn|trang trại|phòng khám/i;
-      if(!category || !business.test(category))return {state:'unverified'};
-      // Only About/Intro contact blocks, never feed articles or comments.
+      // Read public profile/Page content only; never classify a person or Page as a business.
       const nodes=[...box.querySelectorAll('a[href]')].filter(a=>visible(a)&&!a.closest('[role="article"], [role="navigation"]'));
       const contactLines=[];
       const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT);
@@ -45,6 +42,11 @@
         if(/^\+?[\d() .-]+$/.test(v)&&/[+() .-]/.test(v)&&v.replace(/\D/g,'').length>=10&&v.replace(/\D/g,'').length<=15)phones.push(v);
       }
       const seen=new Set(); phones=phones.filter(p=>{let k=p.replace(/\D/g,'');if(k.length===11&&k[0]==='1')k=k.slice(1);if(seen.has(k))return false;seen.add(k);return true;});
+      const websites=[];
+      for(const a of nodes){
+        const site=websiteURL(a.href);
+        if(site)websites.push(site);
+      }
       const addresses=[];
       for(let i=0;i<contactLines.length;i++){
         if(/^(address|địa chỉ)$/i.test(contactLines[i])){
@@ -60,7 +62,38 @@
           const label=a.innerText.trim();if(label&&!/^(get directions|directions|chỉ đường)$/i.test(label))addresses.push(label);
         }
       }
-      return {state:'done',Name:box.querySelector('h1')?.innerText.trim()||'',Address:uniq(addresses).join('; '),Phone:uniq(phones).join('; '),Email:uniq(emails).join('; ')};
+      return {state:'done',Name:box.querySelector('h1')?.innerText.trim()||'',FacebookID:facebookId(),Website:uniq(websites).join('; '),Address:uniq(addresses).join('; '),Phone:uniq(phones).join('; '),Email:uniq(emails).join('; ')};
     }
   };
+  function facebookId(){
+    const currentUser=(document.cookie.match(/(?:^|;\s*)c_user=(\d+)/)||[])[1];
+    const path=location.pathname, params=new URLSearchParams(location.search);
+    if(path==='/profile.php'&&/^\d+$/.test(params.get('id')||''))return params.get('id');
+    const vanity=path.split('/').filter(Boolean)[0];
+    const reserved=new Set(['home','watch','marketplace','gaming','groups','events','messages','profile.php']);
+    const candidates=[];
+    for(const script of document.scripts){
+      const text=script.textContent||'';
+      if(vanity&&!reserved.has(vanity)){
+        const escaped=vanity.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        const hit=text.match(new RegExp(`\\{[^}]*?"(?:vanity|url_vanity)":"${escaped}"[^}]*?\\}`, 'i'));
+        const id=hit?.[0].match(/"id":"(\d{5,})"/); if(id&&id[1]!==currentUser)return id[1];
+      }
+      for(const [pattern,weight] of [[/"(?:pageID|userID)":"(\d{5,})"/,100],[/"delegate_page_id":"(\d{5,})"/,90],[/"entity_id":"(\d{5,})"/,80],[/"profile_id":"(\d{5,})"/,70]]){
+        const hit=text.match(pattern);if(hit&&hit[1]!==currentUser)candidates.push({id:hit[1],weight});
+      }
+    }
+    candidates.sort((a,b)=>b.weight-a.weight);return candidates[0]?.id||'';
+  }
+  function websiteURL(value){
+    try{
+      let u=new URL(value);
+      if(/(^|\.)l\.facebook\.com$/i.test(u.hostname))u=new URL(u.searchParams.get('u')||'');
+      if(!/^https?:$/.test(u.protocol))return '';
+      if(/(^|\.)(facebook\.com|fb\.com|messenger\.com|instagram\.com|threads\.net|whatsapp\.com|google\.com|googleusercontent\.com)$/i.test(u.hostname))return '';
+      u.hash='';
+      for(const key of [...u.searchParams.keys()])if(/^(utm_|fbclid$|gclid$)/i.test(key))u.searchParams.delete(key);
+      return u.href;
+    }catch{return '';}
+  }
 })();
