@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Google Maps Collector - Cào dữ liệu theo khu vực",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Tìm kiếm và thu thập dữ liệu Google Maps theo nhiều khu vực, nhập CSV và xuất CSV tổng hợp hoặc theo khu vực.",
   "permissions": [
     "activeTab",
@@ -12,10 +12,7 @@
   "host_permissions": [
     "https://www.google.com/maps/*"
   ],
-  "action": {
-    "default_title": "Google Maps Collector",
-    "default_popup": "popup.html"
-  },
+  "action": { "default_title": "Mở Google Maps Collector" },
   "content_scripts": [
     {
       "matches": ["https://www.google.com/maps/*"],

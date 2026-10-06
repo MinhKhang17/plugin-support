@@ -6,8 +6,12 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log('[Google Maps Collector] Đã cài đặt.');
 });
 
+chrome.action.onClicked.addListener(() => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'START_BATCH') {
+  if (message.action === 'START_PHASE1' || message.action === 'START_PHASE2') {
     startBatch(message).then(sendResponse).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
@@ -25,7 +29,7 @@ async function startBatch(message) {
   }
   await ensureContentScript(tab.id);
   const result = await sendToTab(tab.id, {
-    action: 'START_BATCH', keyword: message.keyword, areas: message.areas, tabId: tab.id,
+    action: message.action, keyword: message.keyword, areas: message.areas, tabId: tab.id,
   });
   if (!result?.ok) throw new Error(result?.error || 'Không thể khởi chạy trên Google Maps.');
   await chrome.storage.local.set({ gmcLastTabId: tab.id });

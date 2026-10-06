@@ -11,7 +11,7 @@ globalThis.BC = {
     } catch {return '';}
   },
   csv(rows) {
-    const keys=['Name','FacebookURL','Address','Phone','Email'];
+    const keys=['Name','FacebookURL','FacebookID','Website','Address','Phone','Email'];
     const cell=v=>{let s=String(v??''); if (/^[\s]*[=+@-]/.test(s)) s="'"+s; return '"'+s.replace(/"/g,'""')+'"';};
     return '\uFEFF'+[keys.join(','),...rows.map(r=>keys.map(k=>cell(r[k])).join(','))].join('\r\n');
   }

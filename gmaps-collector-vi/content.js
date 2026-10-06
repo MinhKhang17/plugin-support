@@ -1,283 +1,50 @@
-// Google Maps Collector: chạy lần lượt một truy vấn cho mỗi khu vực.
-globalThis.__GMC_CONTENT_READY__ = true;
-const STORAGE_KEY = 'gmcBatch';
-let runnerActive = false;
+// Google Maps Collector — phase 1 collects the list; phase 2 reads details.
+globalThis.__GMC_CONTENT_READY__=true;
+const STORAGE_KEY='gmcBatch';let runnerActive=false;
+chrome.runtime.onMessage.addListener((m,s,reply)=>{const f={START_PHASE1:startPhase1,START_PHASE2:startPhase2,STOP_BATCH:stopBatch}[m.action];if(!f)return;f(m).then(()=>reply({ok:true})).catch(e=>reply({ok:false,error:e.message}));return true;});
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'START_BATCH') {
-    beginBatch(message).then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
-    return true;
-  }
-  if (message.action === 'STOP_BATCH') {
-    stopBatch().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  if (message.action === 'GET_BATCH_STATUS') {
-    chrome.storage.local.get(STORAGE_KEY).then(value => sendResponse(value[STORAGE_KEY] || null));
-    return true;
-  }
-});
+async function startPhase1(m){if(runnerActive)throw Error('Đang có lượt xử lý trên tab này.');const keyword=String(m.keyword||'').trim(),areas=[...new Set((m.areas||[]).map(x=>String(x).trim()).filter(Boolean))];if(!keyword||!areas.length)throw Error('Thiếu từ khóa hoặc danh sách khu vực.');await save({keyword,areas,currentIndex:0,currentArea:areas[0],currentQuery:query(keyword,areas[0]),phase1ByArea:{},resultsByArea:{},completedAreas:[],errorsByArea:{},status:'running',phase:'phase1',tabId:m.tabId||null,message:'Chuẩn bị cào danh sách kết quả…'});void run();}
+async function startPhase2(){if(runnerActive)throw Error('Đang có lượt xử lý trên tab này.');const s=await state();if(!s?.phase1ByArea||!Object.values(s.phase1ByArea).some(x=>x.length))throw Error('Hãy hoàn tất pha 1 trước khi lấy chi tiết.');s.status='running';s.phase='phase2';s.detailCursor={areaIndex:0,itemIndex:0};s.resultsByArea={};s.message='Chuẩn bị mở từng địa điểm…';await save(s);void run();}
+async function resume(){if((await state())?.status==='running')void run();}
+async function run(){if(runnerActive)return;runnerActive=true;try{const s=await state();if(s?.phase==='phase1')await phase1(s);else if(s?.phase==='phase2')await phase2(s);}catch(e){const s=await state();if(s?.status==='running'){s.status='error';s.phase='error';s.message=`Có lỗi: ${e.message||'không xác định'}`;await save(s);}console.error('[GMC]',e);}finally{runnerActive=false;}}
 
-async function beginBatch(message) {
-  if (runnerActive) throw new Error('Đang có lượt cào chạy trên tab này.');
-  const keyword = String(message.keyword || '').trim();
-  const areas = [...new Set((message.areas || []).map(value => String(value).trim()).filter(Boolean))];
-  if (!keyword || !areas.length) throw new Error('Thiếu từ khóa hoặc danh sách khu vực.');
+async function phase1(s){const area=s.areas[s.currentIndex];if(!area){s.status='phase1_done';s.phase='phase1_done';s.message=`Đã chốt danh sách của ${s.completedAreas.length} khu vực. Có thể chạy pha 2.`;return save(s);}s.currentArea=area;s.currentQuery=query(s.keyword,area);if(!isSearch(s.currentQuery)){s.message=`Đang mở tìm kiếm: ${s.currentQuery}`;await save(s);location.assign(searchURL(s.currentQuery));return;}const panel=await waitList(90000);if(!panel){s.errorsByArea[area]='Không tìm thấy danh sách kết quả sau 90 giây.';return finishPhase1(s,area,[]);}s.message=`Pha 1 — đang cào toàn bộ danh sách tại ${area}…`;await save(s);const rows=await collectList(panel,s.keyword,area);s=await state();if(s.status==='running')await finishPhase1(s,area,rows);}
+async function finishPhase1(s,area,rows){s.phase1ByArea[area]=rows;if(!s.completedAreas.includes(area))s.completedAreas.push(area);s.currentIndex++;const next=s.areas[s.currentIndex];if(!next){s.status='phase1_done';s.phase='phase1_done';s.message=`Đã chốt ${rows.length} kết quả cuối cùng. Có thể chạy pha 2.`;return save(s);}s.currentArea=next;s.currentQuery=query(s.keyword,next);s.message=`Đã chốt ${rows.length} địa điểm ở ${area}; chuyển sang ${next}…`;await save(s);location.assign(searchURL(s.currentQuery));}
+async function collectList(panel,keyword,area){const old=(await state())?.phase1ByArea?.[area]||[],found=new Map(old.map(x=>[key(x),x]));let idle=0;for(let n=0;n<150;n++){const before=found.size;for(const x of visibleItems())if(x.name&&!found.has(key(x)))found.set(key(x),{...x,keyword,area});idle=found.size===before?idle+1:0;const s=await state();if(!s||s.status!=='running')break;s.phase1ByArea[area]=[...found.values()];s.currentCount=found.size;s.message=`Pha 1 — ${area}: đã chốt ${found.size} địa điểm trong danh sách…`;await save(s);if(idle>=5&&endOfResults()||idle>=12)break;panel=findList()||panel;panel.scrollTop+=Math.max(450,Math.floor(panel.clientHeight*.9));await sleep(900);}return[...found.values()];}
 
-  const state = {
-    keyword, areas, currentIndex: 0, currentArea: areas[0], currentQuery: makeQuery(keyword, areas[0]),
-    resultsByArea: {}, completedAreas: [], errorsByArea: {}, status: 'running', phase: 'searching',
-    startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), tabId: message.tabId || null,
-    message: `Chuẩn bị tìm kiếm: ${makeQuery(keyword, areas[0])}`,
-  };
-  await saveState(state);
-  void runBatch();
-}
-
-async function resumeBatch() {
-  if (location.hostname !== 'www.google.com') return;
-  const stored = await chrome.storage.local.get(STORAGE_KEY);
-  const state = stored[STORAGE_KEY];
-  if (state?.status === 'running') void runBatch();
-}
-
-async function runBatch() {
-  if (runnerActive) return;
-  runnerActive = true;
-  try {
-    let state = await getState();
-    while (state?.status === 'running') {
-      const area = state.areas[state.currentIndex];
-      if (!area) {
-        state.status = 'done';
-        state.phase = 'done';
-        state.message = `Hoàn tất ${state.completedAreas.length} khu vực.`;
-        state.finishedAt = new Date().toISOString();
-        await saveState(state);
-        break;
-      }
-
-      state.currentArea = area;
-      state.currentQuery = makeQuery(state.keyword, area);
-      state.message = `Đang mở tìm kiếm: ${state.currentQuery}`;
-      await saveState(state);
-
-      if (!matchesCurrentQuery(state.currentQuery)) {
-        const target = makeSearchUrl(state.currentQuery);
-        location.assign(target);
-        return;
-      }
-
-      state.phase = 'loading';
-      state.message = `Đang tải kết quả tại ${area}…`;
-      await saveState(state);
-      const panel = await waitForListPanel(90000);
-      if (!panel) {
-        state.errorsByArea[area] = 'Không tìm thấy danh sách kết quả sau 90 giây.';
-        if (await finishArea(state, area, [])) return;
-        state = await getState();
-        continue;
-      }
-
-      state.phase = 'collecting';
-      state.message = `Đang cào kết quả tại ${area}…`;
-      await saveState(state);
-      const data = await collectResults(panel, state.keyword, area);
-      state = await getState();
-      if (state.status !== 'running') break;
-      if (await finishArea(state, area, data)) return;
-      state = await getState();
-    }
-  } catch (error) {
-    const state = await getState();
-    if (state?.status === 'running') {
-      state.status = 'error';
-      state.phase = 'error';
-      state.message = `Đã xảy ra lỗi: ${error.message || 'không xác định'}`;
-      state.finishedAt = new Date().toISOString();
-      await saveState(state);
-    }
-    console.error('[Google Maps Collector]', error);
-  } finally {
-    runnerActive = false;
+async function phase2(s){const c=s.detailCursor||{areaIndex:0,itemIndex:0},area=s.areas[c.areaIndex];if(!area){s.status='done';s.phase='done';s.message='Đã hoàn tất lấy thông tin chi tiết.';return save(s);}const rows=s.phase1ByArea?.[area]||[],item=rows[c.itemIndex];if(!item){s.detailCursor={areaIndex:c.areaIndex+1,itemIndex:0};await save(s);scheduleResume(300);return;}s.currentArea=area;s.currentCount=c.itemIndex;s.message=`Pha 2 — ${area}: ${c.itemIndex+1}/${rows.length} · ${item.name}`;await save(s);if(!isPlace(item.url)){location.assign(item.url);scheduleResume();return;}const loaded=await waitDetail(item,20000);if(loaded)await scrollDetailPanel();const details=loaded?readDetails():{},result={...item,...Object.fromEntries(Object.entries(details).filter(([,v])=>v))};s=await state();if(s.status!=='running'||s.phase!=='phase2')return;const out=s.resultsByArea[area]||[];out[c.itemIndex]=result;s.resultsByArea[area]=out;s.detailCursor={areaIndex:c.areaIndex,itemIndex:c.itemIndex+1};await save(s);scheduleResume(300);}
+async function waitDetail(item,timeout){const start=Date.now();while(Date.now()-start<timeout){if(isPlace(item.url)&&document.querySelector('[data-item-id="address"],[data-item-id^="phone:"],[data-item-id="authority"],[data-item-id="oloc"]'))return true;await sleep(350);}return false;}
+function scheduleResume(delay=2500){setTimeout(()=>void run(),delay);}
+async function scrollDetailPanel(){
+  // Website, phone and coordinates are often lazy-rendered below the address.
+  // Find the scrollable ancestor of the detail rows, rather than the old
+  // search-results feed, and let Maps render each section before extraction.
+  const anchor=document.querySelector('[data-item-id="address"],[data-item-id^="phone:"],[data-item-id="authority"],[data-item-id="oloc"]');
+  let panel=anchor;
+  while(panel&&panel!==document.body){if(panel.scrollHeight>panel.clientHeight+80)break;panel=panel.parentElement;}
+  if(!panel||panel===document.body)panel=document.scrollingElement;
+  if(!panel)return;
+  for(let step=0;step<6;step++){
+    panel.scrollTop+=Math.max(420,Math.floor(panel.clientHeight*.8));
+    await sleep(550);
+    if(document.querySelector('[data-item-id="authority"]')&&document.querySelector('[data-item-id^="phone:"]')&&document.querySelector('[data-item-id="oloc"]'))break;
   }
 }
 
-async function finishArea(state, area, data) {
-  state.resultsByArea[area] = data;
-  if (!state.completedAreas.includes(area)) state.completedAreas.push(area);
-  state.currentIndex += 1;
-  const nextArea = state.areas[state.currentIndex];
-  if (!nextArea) {
-    state.status = 'done';
-    state.phase = 'done';
-    state.message = `Hoàn tất ${state.completedAreas.length} khu vực.`;
-    state.finishedAt = new Date().toISOString();
-    await saveState(state);
-    return false;
-  }
+function readDetails(){return{address:readText('address','Address'),phone:readText('phone:','Phone'),website:readWebsite(),coordinates:readCoordinates(),plusCode:readPlusCode()};}
+function readText(id,label){const q=id.endsWith(':')?`[data-item-id^="${id}"]`:`[data-item-id="${id}"]`,e=document.querySelector(`${q} .Io6YTe,${q} [aria-label],${q}`)||document.querySelector(`[aria-label^="${label}:"]`);return e?String(e.getAttribute('aria-label')||e.textContent||'').replace(new RegExp(`^${label}:\\s*`,'i'),'').replace(/\s+/g,' ').trim():'';}
+function readWebsite(){for(const a of document.querySelectorAll('[data-item-id="authority"] a[href],a[data-item-id="authority"][href]')){const u=websiteURL(a.href);if(u)return u;}return'';}
+function websiteURL(v){try{const p=new URL(v),u=new URL(p.searchParams.get('q')||p.searchParams.get('url')||p.href);return/^https?:$/i.test(u.protocol)&&!/google\./i.test(u.hostname)?u.href:'';}catch(_){return'';}}
+function readCoordinates(){const e=document.querySelector('[data-item-id="oloc"],[aria-label^="Coordinates:"]');for(const v of[e?.getAttribute('aria-label'),e?.textContent]){const m=String(v||'').match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);if(m)return`${m[1]},${m[2]}`;}const m=location.href.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/);return m?`${m[1]},${m[2]}`:'';}
+function readPlusCode(){const e=document.querySelector('[data-item-id="oloc"]');return e?cleanText(e.querySelector('.Io6YTe')?.textContent||e.textContent||''):'';}
 
-  state.currentArea = nextArea;
-  state.currentQuery = makeQuery(state.keyword, nextArea);
-  state.phase = 'searching';
-  state.message = `Đang chuyển sang khu vực tiếp theo: ${nextArea}`;
-  await saveState(state);
-  location.assign(makeSearchUrl(state.currentQuery));
-  return true;
-}
-
-async function collectResults(panel, keyword, area) {
-  const found = new Map();
-  let idleRounds = 0;
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const before = found.size;
-    for (const item of extractVisibleItems()) {
-      const key = canonicalPlaceUrl(item.url) || `${item.name}|${item.address}`;
-      if (key && !found.has(key)) found.set(key, { ...item, keyword, area });
-    }
-    const added = found.size - before;
-    if (added === 0) idleRounds++;
-    else idleRounds = 0;
-
-    const state = await getState();
-    if (!state) break;
-    state.resultsByArea[area] = [...found.values()];
-    state.message = `Đang cào ${area}: đã tìm thấy ${found.size} địa điểm…`;
-    state.currentCount = found.size;
-    await saveState(state);
-    if (state.status !== 'running') break;
-
-    if (idleRounds >= 5 && isEndOfResults()) break;
-    if (idleRounds >= 10) break;
-    panel = findListPanel() || panel;
-    panel.scrollTop += Math.max(350, Math.floor(panel.clientHeight * 0.8));
-    await sleep(1100);
-  }
-  return [...found.values()];
-}
-
-function findListPanel() {
-  const selectors = ['[role="feed"]', '.m6QErb[aria-label]', '.m6QErb.DxyBCb', 'div[aria-label*="Kết quả"]', 'div[aria-label*="Results"]'];
-  for (const selector of selectors) {
-    const matches = [...document.querySelectorAll(selector)];
-    const panel = matches.find(el => el.scrollHeight > el.clientHeight + 50);
-    if (panel) return panel;
-    if (matches[0]) return matches[0];
-  }
-  return null;
-}
-
-async function waitForListPanel(timeout) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    const panel = findListPanel();
-    if (panel && panel.querySelector('a[href*="/maps/place/"]')) return panel;
-    const state = await getState();
-    if (state?.status !== 'running') return null;
-    await sleep(700);
-  }
-  return null;
-}
-
-function extractVisibleItems() {
-  const anchors = [...document.querySelectorAll('a[href*="/maps/place/"]')];
-  const cards = new Set();
-  for (const anchor of anchors) {
-    const card = anchor.closest('.Nv2PK') || anchor.closest('[data-result-index]') || anchor.closest('[role="article"]') || anchor;
-    cards.add(card);
-  }
-  const results = [];
-  for (const card of cards) {
-    try {
-      const item = extractCardData(card);
-      if (item?.name) results.push(item);
-    } catch (_) { /* bỏ qua thẻ không đọc được */ }
-  }
-  return results;
-}
-
-function extractCardData(card) {
-  const link = card.matches('a[href*="/maps/place/"]') ? card : card.querySelector('a[href*="/maps/place/"]');
-  const url = link?.href || '';
-  if (!url) return null;
-  const container = card.matches('a') ? (card.closest('.Nv2PK') || card.parentElement?.parentElement || card) : card;
-  const fullText = container.innerText || '';
-  const name = link.getAttribute('aria-label')?.trim() ||
-    container.querySelector('.fontHeadlineSmall, .qBF1Pd, h3')?.textContent?.trim() ||
-    decodePlaceName(url);
-  const aria = [...container.querySelectorAll('[role="img"][aria-label]')].map(el => el.getAttribute('aria-label')).join(' ');
-
-  let rating = '';
-  let reviewCount = '';
-  const ratingMatch = `${aria} ${fullText}`.match(/([0-5](?:[.,]\d)?)\s*(?:sao|stars?|trên 5|\/ 5)?\s*\(?\s*([\d.,]+)?\s*(?:đánh giá|lượt đánh giá|reviews?|review)\s*\)?/i);
-  if (ratingMatch) {
-    rating = ratingMatch[1].replace(',', '.');
-    reviewCount = (ratingMatch[2] || '').replace(/[.,]/g, '');
-  }
-  if (!rating) {
-    const plainRating = fullText.match(/(?:^|\s)([0-5][.,]\d)\s*\((\d[\d.,]*)\)/);
-    if (plainRating) { rating = plainRating[1].replace(',', '.'); reviewCount = plainRating[2].replace(/[.,]/g, ''); }
-  }
-
-  const textLines = fullText.split('\n').map(value => value.trim()).filter(Boolean);
-  let category = '';
-  const categoryEl = container.querySelector('.W4Efsd');
-  if (categoryEl) category = categoryEl.textContent.split('·').map(value => value.trim()).find(value => value && !/\d/.test(value)) || '';
-  if (!category) category = textLines.find(value => value.length > 2 && value.length < 45 && !/\d|đánh giá|reviews?|\bsao\b/i.test(value) && value !== name) || '';
-
-  const openMatch = fullText.match(/(Đang mở cửa|Đã đóng cửa|Sắp đóng cửa|Mở cửa 24 giờ|Mở cửa|Tạm đóng|Temporarily closed|Permanently closed|Open 24 hours|Open|Closed)[^\n]*/i);
-  const openStatus = openMatch ? openMatch[0].trim() : '';
-  const phoneMatch = fullText.match(/(?:\+?\d[\d\s().-]{7,}\d)/);
-  let phone = phoneMatch ? phoneMatch[0].trim() : '';
-  if (/\b(?:AM|PM)\b|giờ/i.test(phone)) phone = '';
-
-  let address = '';
-  const candidates = textLines.filter(value => value !== name && value !== category && value !== openStatus && value.length > 5 && value.length < 160);
-  address = candidates.find(value => /\d|đường|phường|quận|huyện|tỉnh|thành phố|street|road|avenue|district|ward/i.test(value) && !/đánh giá|reviews?|\bsao\b/i.test(value)) || '';
-
-  let website = '';
-  for (const anchor of container.querySelectorAll('a[href]')) {
-    try {
-      const href = new URL(anchor.href);
-      const target = href.searchParams.get('q') || href.searchParams.get('url') || href.href;
-      if (/^https?:\/\//.test(target) && !/google\./i.test(new URL(target).hostname) && !target.includes('/maps/')) { website = target; break; }
-    } catch (_) { /* bỏ qua URL lỗi */ }
-  }
-  return { name, rating, reviewCount, category, address, openStatus, phone, website, url, collectedAt: new Date().toISOString() };
-}
-
-function isEndOfResults() {
-  if (document.querySelector('.HlvSq, [aria-label*="đã hiển thị tất cả" i], [aria-label*="end of list" i]')) return true;
-  return /đã hiển thị tất cả|không còn kết quả|end of results|no more results/i.test(document.body.innerText || '');
-}
-
-function makeQuery(keyword, area) { return `${keyword} ${area}`.trim(); }
-// Force Google Maps to render search results in English, independent of browser locale.
-function makeSearchUrl(query) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(query)}?hl=en`;
-}
-function matchesCurrentQuery(query) {
-  const match = location.pathname.match(/\/maps\/search\/([^/]+)/i);
-  if (!match) return false;
-  try { return normalize(decodeURIComponent(match[1]).replace(/\+/g, ' ')) === normalize(query); }
-  catch (_) { return normalize(match[1]) === normalize(query); }
-}
-function normalize(value) { return String(value).normalize('NFKC').replace(/\s+/g, ' ').trim().toLocaleLowerCase(); }
-function canonicalPlaceUrl(value) { try { const url = new URL(value); return `${url.origin}${url.pathname}`; } catch (_) { return value; } }
-function decodePlaceName(url) { try { return decodeURIComponent(new URL(url).pathname.split('/place/')[1]?.split('/')[0] || '').replace(/\+/g, ' '); } catch (_) { return ''; } }
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
-async function getState() { const stored = await chrome.storage.local.get(STORAGE_KEY); return stored[STORAGE_KEY] || null; }
-async function saveState(state) { state.updatedAt = new Date().toISOString(); await chrome.storage.local.set({ [STORAGE_KEY]: state }); }
-async function stopBatch() {
-  const state = await getState();
-  if (!state || state.status !== 'running') return;
-  state.status = 'stopped';
-  state.phase = 'stopped';
-  state.message = `Đã dừng tại khu vực ${state.currentArea || ''}. Dữ liệu đã cào được giữ lại.`;
-  state.finishedAt = new Date().toISOString();
-  await saveState(state);
-}
-
-void resumeBatch();
-console.log('[Google Maps Collector] Đã sẵn sàng.');
+function findList(){for(const q of['[role="feed"]','.m6QErb[aria-label]','.m6QErb.DxyBCb','div[aria-label*="Kết quả"]','div[aria-label*="Results"]']){const a=[...document.querySelectorAll(q)],e=a.find(x=>x.scrollHeight>x.clientHeight+50)||a[0];if(e)return e;}return null;}
+async function waitList(t){const start=Date.now();while(Date.now()-start<t){const p=findList();if(p?.querySelector('a[href*="/maps/place/"]'))return p;if((await state())?.status!=='running')return null;await sleep(650);}return null;}
+function visibleItems(){const cards=new Set();for(const a of document.querySelectorAll('a[href*="/maps/place/"]'))cards.add(a.closest('.Nv2PK,[data-result-index],[role="article"]')||a);return[...cards].map(cardData).filter(Boolean);}
+function cardData(card){const a=card.matches('a[href*="/maps/place/"]')?card:card.querySelector('a[href*="/maps/place/"]');if(!a?.href)return null;const box=card.matches('a')?(card.closest('.Nv2PK')||card.parentElement?.parentElement||card):card,text=box.innerText||'',lines=text.split('\n').map(x=>x.trim()).filter(Boolean),name=cleanText(a.getAttribute('aria-label')?.trim()||box.querySelector('.fontHeadlineSmall,.qBF1Pd,h3')?.textContent?.trim()||decodeName(a.href)),rating=(text.match(/(?:^|\s)([0-5][.,]\d)\s*\(/)?.[1]||'').replace(',','.');const phone=(text.match(/(?:\+?\d[\d\s().-]{7,}\d)/)?.[0]||'').trim(),address=lines.find(x=>x!==name&&x.length>5&&x.length<200&&/\d|đường|phường|quận|huyện|tỉnh|thành phố|street|road|avenue|district|ward/i.test(x)&&!/đánh giá|reviews?|\bsao\b/i.test(x))||'';return{name,address,website:'',url:a.href,rating,phone,coordinates:'',plusCode:''};}
+function endOfResults(){return/đã hiển thị tất cả|không còn kết quả|end of results|no more results/i.test(document.body.innerText||'');}
+function query(k,a){return`${k} ${a}`.trim();}function searchURL(q){return`https://www.google.com/maps/search/${encodeURIComponent(q)}?hl=en`;}
+function isSearch(q){const m=location.pathname.match(/\/maps\/search\/([^/]+)/i);try{return!!m&&norm(decodeURIComponent(m[1]).replace(/\+/g,' '))===norm(q);}catch(_){return false;}}
+function isPlace(url){return location.pathname.includes('/maps/place/')&&canonical(location.href)===canonical(url);}function canonical(v){try{const u=new URL(v);return`${u.origin}${u.pathname}`;}catch(_){return String(v||'');}}function key(x){return canonical(x.url)||`${x.name}|${x.address}`;}function decodeName(v){try{return decodeURIComponent(new URL(v).pathname.split('/place/')[1]?.split('/')[0]||'').replace(/\+/g,' ');}catch(_){return'';}}function cleanText(value){const text=String(value||'').replace(/\s+/g,' ').trim();if(!/[ÃÂâ]/.test(text))return text;try{return new TextDecoder('utf-8').decode(Uint8Array.from([...text].map(char=>char.charCodeAt(0))));}catch(_){return text;}}function norm(x){return String(x).normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleLowerCase();}function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+async function state(){return(await chrome.storage.local.get(STORAGE_KEY))[STORAGE_KEY]||null;}async function save(s){s.updatedAt=new Date().toISOString();await chrome.storage.local.set({[STORAGE_KEY]:s});}async function stopBatch(){const s=await state();if(s?.status==='running'){s.status='stopped';s.phase='stopped';s.message='Đã dừng. Dữ liệu của hai pha được giữ lại.';await save(s);}}
+void resume();
