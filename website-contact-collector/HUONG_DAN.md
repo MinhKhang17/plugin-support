@@ -61,6 +61,12 @@ Cũng có thể dán mỗi URL trên một dòng hoặc nhập TXT. CSV dấu ph
 | ResolvedURL | Trang truy cập thành công đầu tiên sau xử lý URL |
 | Email, Gmail, Phone | Email ưu tiên, Gmail nếu có, điện thoại ưu tiên |
 | AllEmails, AllPhones | Mọi giá trị phát hiện, cách nhau bằng dấu chấm phẩy |
+| Address | Địa chỉ đường phố trích xuất từ website (ví dụ: `123 Country Road`, `12400 Hwy 71 W, Suite 200`) |
+| City | Thành phố trích xuất từ website (ví dụ: `Austin`, `Dallas`) |
+| State | Bang chuẩn hóa mã 2 chữ cái (ví dụ: `TX`, `CA`, `FL`) hoặc tỉnh bang Canada |
+| ZipCode | Mã ZIP / bưu chính (ví dụ: `78738`, `75201-1234`) |
+| Country | Quốc gia (`US`, `CA`) |
+| AddressSource | URL trang nơi trích xuất được địa chỉ |
 | FacebookURL | Link Facebook được phát hiện / đã thử |
 | FacebookID | ID xác định được; có thể có nhiều ID nếu thử nhiều trang |
 | FacebookIDStatus | Căn cứ nhận diện ID |

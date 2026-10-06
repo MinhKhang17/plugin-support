@@ -85,3 +85,28 @@ test('Ứng viên ID mơ hồ không ghi vào FacebookID',async()=>{
   r.inject=async()=>({id:'',method:'',candidates:['111111111','222222222']});
   await r.start();assert.equal(r.state.results[0].FacebookID,'');assert.equal(r.state.results[0].FacebookIDCandidates,'111111111; 222222222');
 });
+test('Runner trích xuất và gộp đầy đủ địa chỉ, thành phố, bang, zip từ trang web',async()=>{
+  const fixturePage={
+    url:'https://kennel.test/',
+    emails:['contact@kennel.test'],
+    phones:['+1 512-555-1234'],
+    links:[],
+    address:{
+      street:'12400 Hwy 71 W, Suite 200',
+      city:'Austin',
+      state:'TX',
+      zip:'78738',
+      country:'US'
+    }
+  };
+  const r=await setup({'https://kennel.test/':fixturePage},[row('https://kennel.test/')]);
+  await r.start();
+  const res=r.state.results[0];
+  assert.equal(res.Address,'12400 Hwy 71 W, Suite 200');
+  assert.equal(res.City,'Austin');
+  assert.equal(res.State,'TX');
+  assert.equal(res.ZipCode,'78738');
+  assert.equal(res.Country,'US');
+  assert.equal(res.AddressSource,'https://kennel.test/');
+});
+

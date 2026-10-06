@@ -17,6 +17,7 @@ export async function scanPage(fastMode=false) {
     (firstText.length<3500 && /(?:^|\n)\s*(404(?:\s*[-:|]?\s*(?:error|not found|page not found))?|page not found|this page (?:isn.t|is not) available)\s*(?:\n|$)/i.test(firstText));
   if(errorTitle||errorBody) return {url:location.href,error:true,reason:'Trang lỗi hoặc không tồn tại'};
   const emails=new Set(),phones=new Set(),links=new Map(),facebookSignals=[],instagramSignals=[];
+  let address={street:'',city:'',state:'',zip:'',country:''};
   let staticSourcesCollected=false;
   const seenAnchors=new WeakSet(),seenData=new WeakSet(),seenCloudflare=new WeakSet(),seenProperties=new WeakSet();
   const emailRx=/[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,24}/g;
@@ -111,20 +112,276 @@ export async function scanPage(fastMode=false) {
       if(el.getAttribute('itemprop')==='email')email(el.getAttribute('content')||el.textContent||'');
       else phone(el.getAttribute('content')||el.textContent||'',true);
     }
+    const US_STATES={AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'District of Columbia',PR:'Puerto Rico',VI:'Virgin Islands'};
+    const CA_PROVINCES={AB:'Alberta',BC:'British Columbia',MB:'Manitoba',NB:'New Brunswick',NL:'Newfoundland',NS:'Nova Scotia',NT:'Northwest Territories',NU:'Nunavut',ON:'Ontario',PE:'Prince Edward Island',QC:'Quebec',SK:'Saskatchewan',YT:'Yukon'};
+    const STATE_MAP=new Map();
+    for(const [code,name] of Object.entries(US_STATES)){
+      STATE_MAP.set(code.toLowerCase(),{code,country:'US'});
+      STATE_MAP.set(name.toLowerCase(),{code,country:'US'});
+    }
+    for(const [code,name] of Object.entries(CA_PROVINCES)){
+      STATE_MAP.set(code.toLowerCase(),{code,country:'CA'});
+      STATE_MAP.set(name.toLowerCase(),{code,country:'CA'});
+    }
+    function lookupState(str){
+      if(!str||typeof str!=='string')return null;
+      return STATE_MAP.get(str.trim().toLowerCase())||null;
+    }
+    function normalizeAddressObj({street='',city='',state='',zip='',country=''}={}){
+      let s=String(street||'').trim().replace(/^[,\s;.-]+|[,\s;.-]+$/g,'');
+      let c=String(city||'').trim().replace(/^[,\s;.-]+|[,\s;.-]+$/g,'');
+      let r=String(state||'').trim();
+      let z=String(zip||'').trim();
+      let co=String(country||'').trim();
+      if(/^(?:united states|usa|u\.s\.a\.?|u\.s\.?)$/i.test(co))co='US';
+      if(/^(?:canada)$/i.test(co))co='CA';
+      const stInfo=lookupState(r);
+      if(stInfo){
+        r=stInfo.code;
+        if(!co)co=stInfo.country;
+      }
+      const zipMatch=z.match(/\b\d{5}(?:-\d{4})?\b/)||z.match(/\b[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d\b/);
+      if(zipMatch)z=zipMatch[0].toUpperCase();
+      s=s.replace(/^(?:(?:physical\s+|mailing\s+)?address|location|visit us(?:\s+at|\s+in)?|our address)\s*[:–-]\s*/i,'').trim();
+      c=c.replace(/^(?:city of|located in|serving|in|at)\s+/i,'').trim();
+      if(/^\d{1,5}\s+[A-Za-z]/i.test(c)&&!s){s=c;c='';}
+      if(s.length>120)s=s.slice(0,120).trim();
+      if(c.length>50)c=c.slice(0,50).trim();
+      return {street:s,city:c,state:r,zip:z,country:co};
+    }
+    function parseAddressText(raw){
+      if(!raw||typeof raw!=='string')return null;
+      let text=raw.replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim();
+      if(text.length<4||text.length>260)return null;
+      if(/©|copyright|all rights reserved|isbn|tracking number|order #|terms of|privacy policy/i.test(text))return null;
+      text=text.replace(/^(?:(?:physical\s+|mailing\s+)?address|location|visit us(?:\s+at|\s+in)?|we are located(?:\s+at|\s+in)?|our location|find us(?:\s+at|\s+in)?|office|headquarters|facility|kennel location)\s*[:–-]\s*/i,'');
+      let country='';
+      const countryMatch=text.match(/(?:,\s*|\s+)(USA|United States|U\.S\.A\.?|U\.S\.?|Canada)\s*$/i);
+      if(countryMatch){
+        country=/Canada/i.test(countryMatch[1])?'CA':'US';
+        text=text.slice(0,countryMatch.index).trim();
+      }
+      text=text.replace(/\s*[,|•·;]\s*(?:phone|tel|call|email|fax|hours|mon|tue|wed|thu|fri|sat|sun|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}).*$/i,'').trim();
+
+      const stateZipRx=/(?:,\s*|\s+)([A-Za-z]{2}|[A-Za-z\s]{4,25})\s+(\d{5}(?:-\d{4})?|[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d)\s*$/i;
+      const m=text.match(stateZipRx);
+      if(m){
+        const stInfo=lookupState(m[1]);
+        if(stInfo){
+          const state=stInfo.code;
+          const zip=m[2].trim().toUpperCase();
+          if(!country)country=stInfo.country;
+          const before=text.slice(0,m.index).trim().replace(/,\s*$/,'');
+          if(before){
+            const parts=before.split(',').map(p=>p.trim()).filter(Boolean);
+            if(parts.length>=2){
+              const city=parts[parts.length-1];
+              const street=parts.slice(0,-1).join(', ');
+              return normalizeAddressObj({street,city,state,zip,country});
+            } else if(parts.length===1){
+              const streetSuffixRx=/^(.*?\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|loop|box\s+\d+)\b\.?)\s+([A-Za-z][A-Za-z\s.'-]{1,40})$/i;
+              const splitMatch=parts[0].match(streetSuffixRx);
+              if(splitMatch){
+                return normalizeAddressObj({street:splitMatch[1],city:splitMatch[2],state,zip,country});
+              }
+              if(/^\d{1,5}\s+[A-Za-z]/i.test(parts[0])){
+                return normalizeAddressObj({street:parts[0],city:'',state,zip,country});
+              }
+              return normalizeAddressObj({street:'',city:parts[0],state,zip,country});
+            }
+          }
+          return normalizeAddressObj({street:'',city:'',state,zip,country});
+        }
+      }
+
+      const stateOnlyRx=/(?:,\s*|\s+)([A-Za-z]{2}|[A-Za-z\s]{4,25})\s*$/i;
+      const m2=text.match(stateOnlyRx);
+      if(m2){
+        const stInfo=lookupState(m2[1]);
+        const isStrictState=m2[1].length>2||m2[1]===m2[1].toUpperCase();
+        if(stInfo&&isStrictState){
+          const state=stInfo.code;
+          if(!country)country=stInfo.country;
+          const before=text.slice(0,m2.index).trim().replace(/,\s*$/,'');
+          if(before){
+            const parts=before.split(',').map(p=>p.trim()).filter(Boolean);
+            if(parts.length>=2){
+              const city=parts[parts.length-1];
+              const street=parts.slice(0,-1).join(', ');
+              return normalizeAddressObj({street,city,state,zip:'',country});
+            } else if(parts.length===1){
+              if(!/^\d{1,5}\s+[A-Za-z]/i.test(parts[0])){
+                return normalizeAddressObj({street:'',city:parts[0],state,zip:'',country});
+              }
+            }
+          }
+        }
+      }
+      return null;
+    }
+    function isStreetCandidate(line){
+      if(!line||typeof line!=='string')return false;
+      const l=line.trim();
+      if(l.length<3||l.length>90)return false;
+      if(/@|http|www\.|©|copyright|phone|call us|email|mon|tue|wed|thu|fri|sat|sun/i.test(l))return false;
+      if(/^\d{1,6}[A-Za-z]?\s+[A-Za-z0-9#]/i.test(l))return true;
+      if(/^(?:p\.?o\.?\s*box|box\s+\d+|rural\s+route|rr\s+\d+)/i.test(l))return true;
+      if(/\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|route|rte|expressway|expy|loop|terrace|ter)\b\.?/i.test(l))return true;
+      if(/\b(?:suite|ste|apt|apartment|unit|bldg|building|floor|fl|room|rm|lot)\b\s*[#A-Za-z0-9]/i.test(l))return true;
+      return false;
+    }
+    function scanTextForAddress(text){
+      if(!text||typeof text!=='string')return;
+      const rawLines=text.split(/\r?\n/).map(l=>l.replace(/\s+/g,' ').trim()).filter(Boolean);
+      for(let i=0;i<rawLines.length&&i<500;i++){
+        const line=rawLines[i];
+        if(line.length>250||line.length<4)continue;
+        if(/©|copyright|all rights reserved|terms|privacy/i.test(line))continue;
+        const parsed=parseAddressText(line);
+        if(parsed){
+          if(!parsed.street&&i>0){
+            const prev=rawLines[i-1];
+            if(isStreetCandidate(prev)){
+              if(i>1&&/\b(?:suite|ste|apt|unit|bldg|floor)\b/i.test(prev)&&isStreetCandidate(rawLines[i-2])){
+                parsed.street=rawLines[i-2]+', '+prev;
+              } else {
+                parsed.street=prev;
+              }
+            }
+          }
+          mergeAddress(parsed);
+          if(address.street&&address.city&&address.state&&address.zip)break;
+        }
+      }
+    }
+    function extractMapsAddress(raw){
+      if(!raw||typeof raw!=='string')return null;
+      try {
+        const u=new URL(raw,location.href);
+        if(!/(?:google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.apple\.com)/i.test(u.hostname+u.pathname))return null;
+        let query=u.searchParams.get('q')||u.searchParams.get('query')||u.searchParams.get('daddr')||u.searchParams.get('destination')||u.searchParams.get('address')||'';
+        if(!query&&u.pathname.includes('/place/')){
+          const match=u.pathname.match(/\/place\/([^/]+)/);
+          if(match)query=decodeURIComponent(match[1].replace(/\+/g,' '));
+        }
+        if(!query&&u.searchParams.get('pb')){
+          const pb=decodeURIComponent(u.searchParams.get('pb'));
+          const pbMatch=pb.match(/!2s([^!]+)/);
+          if(pbMatch&&pbMatch[1].length>5&&!pbMatch[1].startsWith('0x')){
+            query=pbMatch[1].replace(/\+/g,' ');
+          }
+        }
+        if(query){
+          query=query.replace(/\+/g,' ').trim();
+          if(/^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(query))return null;
+          return parseAddressText(query);
+        }
+      }catch{}
+      return null;
+    }
+    function mergeAddress(a) {
+      if(!a)return;
+      const norm=normalizeAddressObj(a);
+      if(norm.street&&!address.street)address.street=norm.street;
+      if(norm.city&&!address.city)address.city=norm.city;
+      if(norm.state&&!address.state)address.state=norm.state;
+      if(norm.zip&&!address.zip)address.zip=norm.zip;
+      if(norm.country&&!address.country)address.country=norm.country;
+    }
     // Chỉ đọc contact của tổ chức trong JSON-LD; bỏ Review/Person phụ trong trang.
     function readLD(obj,depth=0) {
       if(!obj||typeof obj!=='object'||depth>8)return;
       if(Array.isArray(obj)){obj.slice(0,100).forEach(v=>readLD(v,depth+1));return;}
       const types=[].concat(obj['@type']||[]).join(' ');
-      if(/Organization|LocalBusiness|Store|ProfessionalService|PetStore|ContactPoint/i.test(types)) {
+      if(/Organization|LocalBusiness|Store|ProfessionalService|PetStore|ContactPoint|Place|AnimalShelter|VeterinaryCare/i.test(types)) {
         if(typeof obj.email==='string')email(obj.email);
         if(typeof obj.telephone==='string')phone(obj.telephone,true);
         for(const u of [].concat(obj.sameAs||[]))if(typeof u==='string')links.set(u,'');
         readLD(obj.contactPoint,depth+1);
       }
+      if(obj.address||obj.location||/PostalAddress/i.test(types)||obj.streetAddress||obj.addressLocality) {
+        readAddressLD(obj.address||obj.location||obj);
+      }
       readLD(obj['@graph'],depth+1);
+      for(const k of Object.keys(obj)){
+        if(obj[k]&&typeof obj[k]==='object'&&!['@graph','address','location'].includes(k)&&depth<3){
+          readLD(obj[k],depth+1);
+        }
+      }
+    }
+    function readAddressLD(a,depth=0) {
+      if(!a||depth>4)return;
+      if(Array.isArray(a)){a.forEach(v=>readAddressLD(v,depth+1));return;}
+      if(typeof a==='string'){mergeAddress(parseAddressText(a));return;}
+      if(typeof a==='object'){
+        const s=typeof a.streetAddress==='string'?a.streetAddress.trim():(Array.isArray(a.streetAddress)?a.streetAddress.join(', ').trim():'');
+        const c=typeof a.addressLocality==='string'?a.addressLocality.trim():'';
+        const r=typeof a.addressRegion==='string'?a.addressRegion.trim():'';
+        const z=typeof a.postalCode==='string'?a.postalCode.trim():(typeof a.postalCode==='number'?String(a.postalCode):'');
+        const co=typeof a.addressCountry==='string'?a.addressCountry.trim():(a.addressCountry?.name||a.addressCountry?.['@id']||'');
+        if(s||c||r||z){
+          mergeAddress(normalizeAddressObj({street:s,city:c,state:r,zip:z,country:co}));
+        }
+        if(a.address)readAddressLD(a.address,depth+1);
+      }
     }
     for(const s of document.querySelectorAll('script[type="application/ld+json"]'))try{readLD(JSON.parse(s.textContent));}catch{}
+    // Đọc địa chỉ từ microdata itemprop="address" và các thuộc tính con
+    for(const el of document.querySelectorAll('[itemprop="address"]')) {
+      const s=el.querySelector?.('[itemprop="streetAddress"]')?.getAttribute('content')||el.querySelector?.('[itemprop="streetAddress"]')?.textContent||'';
+      const c=el.querySelector?.('[itemprop="addressLocality"]')?.getAttribute('content')||el.querySelector?.('[itemprop="addressLocality"]')?.textContent||'';
+      const r=el.querySelector?.('[itemprop="addressRegion"]')?.getAttribute('content')||el.querySelector?.('[itemprop="addressRegion"]')?.textContent||'';
+      const z=el.querySelector?.('[itemprop="postalCode"]')?.getAttribute('content')||el.querySelector?.('[itemprop="postalCode"]')?.textContent||'';
+      const co=el.querySelector?.('[itemprop="addressCountry"]')?.getAttribute('content')||el.querySelector?.('[itemprop="addressCountry"]')?.textContent||'';
+      if(s||c||r||z)mergeAddress({street:s.trim(),city:c.trim(),state:r.trim(),zip:z.trim(),country:co.trim()});
+      else {
+        const t=(el.getAttribute('content')||el.innerText||el.textContent||'').trim();
+        if(t)scanTextForAddress(t);
+      }
+    }
+    const sa=document.querySelector('[itemprop="streetAddress"]');
+    const al=document.querySelector('[itemprop="addressLocality"]');
+    const ar=document.querySelector('[itemprop="addressRegion"]');
+    const pc=document.querySelector('[itemprop="postalCode"]');
+    if(sa||al||ar||pc){
+      const s=sa?.getAttribute('content')||sa?.textContent||'';
+      const c=al?.getAttribute('content')||al?.textContent||'';
+      const r=ar?.getAttribute('content')||ar?.textContent||'';
+      const z=pc?.getAttribute('content')||pc?.textContent||'';
+      if(s||c||r||z)mergeAddress({street:s.trim(),city:c.trim(),state:r.trim(),zip:z.trim(),country:''});
+    }
+    // Đọc địa chỉ từ thẻ semantic <address>
+    for(const el of document.querySelectorAll('address')){
+      const t=(el.innerText||el.textContent||'').trim();
+      if(t)scanTextForAddress(t);
+    }
+    // Đọc địa chỉ từ data-* attributes (data-city, data-state, data-zip, data-address, ...)
+    for(const el of document.querySelectorAll('[data-address],[data-city],[data-state],[data-zip],[data-postal-code],[data-postalcode],[data-region]')) {
+      const s=el.getAttribute('data-address')||el.getAttribute('data-street')||'';
+      const c=el.getAttribute('data-city')||'';
+      const r=el.getAttribute('data-state')||el.getAttribute('data-region')||'';
+      const z=el.getAttribute('data-zip')||el.getAttribute('data-postal-code')||el.getAttribute('data-postalcode')||'';
+      const co=el.getAttribute('data-country')||'';
+      if(s||c||r||z)mergeAddress({street:String(s).trim(),city:String(c).trim(),state:String(r).trim(),zip:String(z).trim(),country:String(co).trim()});
+    }
+    // Đọc địa chỉ từ link bản đồ Google Maps / Apple Maps và iframe
+    for(const a of document.querySelectorAll('a[href*="maps.google."],a[href*="google.com/maps"],a[href*="maps.apple.com"]')) {
+      const m=extractMapsAddress(a.getAttribute('href')||'');
+      if(m)mergeAddress(m);
+    }
+    for(const iframe of document.querySelectorAll('iframe[src*="google.com/maps"],iframe[src*="maps.google."]')) {
+      const m=extractMapsAddress(iframe.getAttribute('src')||'');
+      if(m)mergeAddress(m);
+    }
+    // Khối địa chỉ footer / container
+    for(const el of document.querySelectorAll('footer,[class*="footer" i],[class*="address" i],[id*="address" i],[class*="location" i],[id*="location" i]')) {
+      const t=(el.innerText||'').trim();
+      if(t&&t.length<1000)scanTextForAddress(t);
+    }
+    // Quét văn bản hiển thị toàn trang nếu còn thiếu trường địa chỉ
+    if(!address.street||!address.city||!address.state||!address.zip) {
+      scanTextForAddress(document.body?.innerText||'');
+    }
   }
   collect();
   const viewportHeight=window.innerHeight||document.documentElement.clientHeight||1;
@@ -132,8 +389,8 @@ export async function scanPage(fastMode=false) {
     window.scrollTo(0,Math.floor(document.documentElement.scrollHeight/(fastMode?2:2)));await delay(fastMode?300:200);collect();
     if(!fastMode){window.scrollTo(0,document.documentElement.scrollHeight);await delay(350);collect();}
   }
-  if(!(document.body?.innerText||'').trim()&&!links.size&&!emails.size&&!phones.size)return {url:location.href,error:true,reason:'Trang trống hoặc chưa hiển thị được nội dung'};
-  return {url:location.href,title,emails:[...emails].slice(0,50),phones:[...phones].slice(0,30),links:[...links].slice(0,2000).map(([url,text])=>({url,text})),facebookSignals:facebookSignals.slice(0,100),instagramSignals:instagramSignals.slice(0,100)};
+  if(!(document.body?.innerText||'').trim()&&!links.size&&!emails.size&&!phones.size&&!address.street&&!address.city)return {url:location.href,error:true,reason:'Trang trống hoặc chưa hiển thị được nội dung'};
+  return {url:location.href,title,emails:[...emails].slice(0,50),phones:[...phones].slice(0,30),links:[...links].slice(0,2000).map(([url,text])=>({url,text})),facebookSignals:facebookSignals.slice(0,100),instagramSignals:instagramSignals.slice(0,100),address:{...address}};
 }
 
 export function scanFacebookID() {
