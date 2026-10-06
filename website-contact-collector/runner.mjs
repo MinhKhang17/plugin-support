@@ -133,7 +133,7 @@ export class Runner {
     const wantsFacebook=socialSearch==='facebook'||socialSearch==='both';
     const wantsInstagram=socialSearch==='instagram'||socialSearch==='both';
     const hasContactData=()=>emails.length>0&&phones.length>0;
-    const hostOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';}};
+    const hostOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';};};
     const checkpoint=async()=>{
       result.Email=primaryEmail(emails,result.ResolvedURL||record.url);
       result.Gmail=emails.find(e=>/@gmail\.com$/i.test(e))||'';
@@ -354,7 +354,7 @@ export class Runner {
       const limit=Math.max(1,Math.min(12,Number(this.state.settings.parallel)||1));
       const rowDelay=()=>limit>1?Math.min(Number(this.state.settings.delay)||0,0.25):Number(this.state.settings.delay)||0;
       const domainActive=new Map(),domainLimit=3;
-      const domainOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';}};
+      const domainOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';};};
       const acquireDomain=async domain=>{
         if(!domain)return;
         while((domainActive.get(domain)||0)>=domainLimit){this.check();await this.wait(100);}

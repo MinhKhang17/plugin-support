@@ -109,4 +109,3 @@ test('Runner trích xuất và gộp đầy đủ địa chỉ, thành phố, ba
   assert.equal(res.Country,'US');
   assert.equal(res.AddressSource,'https://kennel.test/');
 });
-

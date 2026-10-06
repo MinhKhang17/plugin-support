@@ -54,9 +54,9 @@ export async function scanPage(fastMode=false) {
         // Script/meta text is not a URL. Parsing it as a relative URL created
         // enormous bogus URLs on Squarespace (`/Static = window.Static...`).
         const urlLike=/^(?:https?:)?\/\//i.test(value)||allowRelative;
-        if(urlLike)try {const u=new URL(value,location.href);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}u.searchParams.forEach(v=>values.push(v));}catch{}
+        if(urlLike)try {const u=new URL(value,location.href);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}u.searchParams.forEach(v=>values.push(v));}catch{}
         for(const found of value.match(/(?:https?:\/\/|www\.)[^\s<>"'`]+/gi)||[]) {
-          try {const u=new URL(/^www\./i.test(found)?'https://'+found:found);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}}catch{}
+          try {const u=new URL(/^www\./i.test(found)?'https://'+found:found);if(/^https?:$/.test(u.protocol)){links.set(u.href,label.slice(0,160));if(/(^|\\.)(facebook\.com|fb\.com|fb\.me)$/i.test(u.hostname))facebookSignals.push({url:u.href,method,context:label.slice(0,160)});if(/(^|\\.)(instagram\.com|instagr\.am)$/i.test(u.hostname))instagramSignals.push({url:u.href,method,context:label.slice(0,160)});}}catch{}
         }
       }
     };
@@ -179,7 +179,7 @@ export async function scanPage(fastMode=false) {
               const street=parts.slice(0,-1).join(', ');
               return normalizeAddressObj({street,city,state,zip,country});
             } else if(parts.length===1){
-              const streetSuffixRx=/^(.*?\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|loop|box\s+\d+)\b\.?)\s+([A-Za-z][A-Za-z\s.'-]{1,40})$/i;
+              const streetSuffixRx=/^(.*?\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|loop|box\s+\d+)\.?)\s+([A-Za-z][A-Za-z\s.'-]{1,40})$/i;
               const splitMatch=parts[0].match(streetSuffixRx);
               if(splitMatch){
                 return normalizeAddressObj({street:splitMatch[1],city:splitMatch[2],state,zip,country});
@@ -226,7 +226,7 @@ export async function scanPage(fastMode=false) {
       if(/@|http|www\.|©|copyright|phone|call us|email|mon|tue|wed|thu|fri|sat|sun/i.test(l))return false;
       if(/^\d{1,6}[A-Za-z]?\s+[A-Za-z0-9#]/i.test(l))return true;
       if(/^(?:p\.?o\.?\s*box|box\s+\d+|rural\s+route|rr\s+\d+)/i.test(l))return true;
-      if(/\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|route|rte|expressway|expy|loop|terrace|ter)\b\.?/i.test(l))return true;
+      if(/\b(?:street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|trail|trl|parkway|pkwy|place|pl|highway|hwy|route|rte|expressway|expy|loop|terrace|ter)\.?/i.test(l))return true;
       if(/\b(?:suite|ste|apt|apartment|unit|bldg|building|floor|fl|room|rm|lot)\b\s*[#A-Za-z0-9]/i.test(l))return true;
       return false;
     }

@@ -113,4 +113,3 @@ test('Không nhận nhầm từ tiếng Anh ngẫu nhiên làm bang', async () =
   assert.equal(r.address.state, '');
   assert.equal(r.address.zip, '');
 });
-
