@@ -9,29 +9,32 @@ function render(s) {
   if(renderTimer)return;
   renderTimer=setTimeout(()=>{renderTimer=0;const state=pendingState;pendingState=null;renderNow(state);},100);
 }
+const setTxt=(id,val)=>{const el=$(id);if(el)el.textContent=val;};
 function renderNow(s) {
-  $('status').textContent=s.status;$('counter').textContent=s.index+' / '+s.records.length;
-  $('progress').max=Math.max(1,s.records.length);$('progress').value=s.index;
-  $('emailCount').textContent=s.results.filter(r=>r?.Email).length;
-  $('phoneCount').textContent=s.results.filter(r=>r?.Phone).length;
-  $('fbCount').textContent=s.results.filter(r=>r?.FacebookID).length;
-  $('instagramCount').textContent=s.results.filter(r=>r?.InstagramURL).length;
+  setTxt('status',s.status);
+  setTxt('counter',s.index+' / '+s.records.length);
+  const prog=$('progress');if(prog){prog.max=Math.max(1,s.records.length);prog.value=s.index;}
+  setTxt('emailCount',s.results.filter(r=>r?.Email).length);
+  setTxt('phoneCount',s.results.filter(r=>r?.Phone).length);
+  setTxt('addressCount',s.results.filter(r=>r?.Address||r?.City||r?.State).length);
+  setTxt('fbCount',s.results.filter(r=>r?.FacebookID).length);
+  setTxt('instagramCount',s.results.filter(r=>r?.InstagramURL).length);
   const completed=s.results.filter(Boolean),processed=completed.length,total=s.records.length;
-  const emailFound=completed.filter(r=>r.Email).length,phoneFound=completed.filter(r=>r.Phone).length,fbFound=completed.filter(r=>r.FacebookID).length,instagramFound=completed.filter(r=>r.InstagramURL).length;
-  const anyData=completed.filter(r=>r.Email||r.Phone||r.FacebookID||r.InstagramURL).length;
+  const emailFound=completed.filter(r=>r.Email).length,phoneFound=completed.filter(r=>r.Phone).length,addressFound=completed.filter(r=>r.Address||r.City||r.State).length,fbFound=completed.filter(r=>r.FacebookID).length,instagramFound=completed.filter(r=>r.InstagramURL).length;
+  const anyData=completed.filter(r=>r.Email||r.Phone||r.Address||r.City||r.State||r.FacebookID||r.InstagramURL).length;
   const rate=value=>processed?Math.round(value*100/processed)+'%':'0%';
-  $('summaryTotal').textContent=String(total);
-  $('summaryProcessed').textContent=processed+' / '+total;
-  $('summaryEmailRate').textContent=rate(emailFound);
-  $('summaryPhoneRate').textContent=rate(phoneFound);
-  $('summaryFacebookRate').textContent=rate(fbFound);
-  $('summaryInstagramRate').textContent=rate(instagramFound);
-  $('summaryDataRate').textContent=rate(anyData);
-  $('summaryAverage').textContent=processed?((emailFound+phoneFound+fbFound+instagramFound)/processed).toFixed(2):'0';
+  setTxt('summaryTotal',String(total));
+  setTxt('summaryProcessed',processed+' / '+total);
+  setTxt('summaryEmailRate',rate(emailFound));
+  setTxt('summaryPhoneRate',rate(phoneFound));
+  setTxt('summaryAddressRate',rate(addressFound));
+  setTxt('summaryFacebookRate',rate(fbFound));
+  setTxt('summaryInstagramRate',rate(instagramFound));
+  setTxt('summaryDataRate',rate(anyData));
   const active=s.activeUrls||[];
-  $('current').textContent=active.length?'Đang xử lý đồng thời '+active.length+' web':s.records[s.index]?'Sẵn sàng xử lý dòng tiếp theo':'';
+  setTxt('current',active.length?'Đang xử lý đồng thời '+active.length+' web':s.records[s.index]?'Sẵn sàng xử lý dòng tiếp theo':'');
   const visited=s.visitedUrls||[];
-  $('visitedCount').textContent=visited.length+' link';
+  setTxt('visitedCount',visited.length+' link');
   // URLs only append during a run, so avoid rebuilding thousands of DOM nodes
   // every time the progress counter changes.
   if(visited.length<renderedVisited.length||visited.some((url,i)=>url!==renderedVisited[i])) {renderedVisited=[];$('visitedLinks').replaceChildren();}
@@ -49,10 +52,28 @@ function renderNow(s) {
     if(index===s.index&&s.partial)return {row:s.partial,state:'working',index};
     return {row:emptyResult(record),state:index===s.index&&runner.running?'working':'pending',index};
   });
-  const filtered=rows.filter(item=>(!$('filterGmail').checked||/@gmail\.com$/i.test(item.row.Email||''))&&(!$('filterPhone').checked||Boolean(item.row.Phone)));
+  const filtered=rows.filter(item=>(!$('filterGmail').checked||/@gmail\.com$/i.test(item.row.Email||''))&&(!$('filterPhone').checked||Boolean(item.row.Phone))&&(!$('filterAddress').checked||Boolean(item.row.Address||item.row.City||item.row.State)));
   $('resultCount').textContent=filtered.length+' / '+s.records.length+' dòng';
   const fragment=document.createDocumentFragment();
-  for(const item of filtered){const row=item.row,tr=document.createElement('tr');for(const k of ['SourceRow','Website','Email','Phone','FacebookURL','FacebookID','InstagramURL']){const td=document.createElement('td');td.textContent=row[k]||'';tr.append(td);}const processing=document.createElement('td'),badge=document.createElement('span');badge.className='run-badge '+item.state;badge.textContent=item.state==='done'?'✓ Hoàn thành':item.state==='working'?'⏳ Đang xử lý':'○ Chờ xử lý';processing.append(badge);tr.append(processing);const detail=document.createElement('td');detail.textContent=item.state==='pending'?'Chưa chạy':row.Status||'';tr.append(detail);const action=document.createElement('td');if(item.state==='done'){const button=document.createElement('button');button.className='secondary edit-row';button.dataset.row=String(item.index);button.textContent=editingRow===item.index?'Đóng':'Sửa';action.append(button);}tr.append(action);fragment.append(tr);if(editingRow===item.index){const formRow=document.createElement('tr'),formCell=document.createElement('td');formCell.colSpan=10;formCell.className='inline-edit';formCell.innerHTML=`<label>Email<input data-field="Email" value="${escapeAttr(row.Email||'')}"></label><label>Điện thoại<input data-field="Phone" value="${escapeAttr(row.Phone||'')}"></label><label>Facebook URL<input data-field="FacebookURL" value="${escapeAttr(row.FacebookURL||'')}"></label><label>Facebook ID<input data-field="FacebookID" value="${escapeAttr(row.FacebookID||'')}"></label><label>Instagram URL<input data-field="InstagramURL" value="${escapeAttr(row.InstagramURL||'')}"></label><button class="primary save-inline" data-row="${item.index}">Lưu</button><button class="secondary cancel-inline">Hủy</button>`;formRow.append(formCell);fragment.append(formRow);}}$('results').append(fragment);
+  for(const item of filtered){
+    const row=item.row,tr=document.createElement('tr');
+    for(const k of ['SourceRow','Website','Email','Phone','Address','FacebookURL','FacebookID','InstagramURL']){
+      const td=document.createElement('td');
+      if(k==='Address'){
+        const addrText=[row.Address,row.City,row.State,row.ZipCode].filter(Boolean).join(', ');
+        td.textContent=addrText;
+        if(addrText)td.title=[row.Address,row.City,row.State,row.ZipCode,row.Country].filter(Boolean).join(', ');
+      } else {
+        td.textContent=row[k]||'';
+      }
+      tr.append(td);
+    }
+    const processing=document.createElement('td'),badge=document.createElement('span');badge.className='run-badge '+item.state;badge.textContent=item.state==='done'?'✓ Hoàn thành':item.state==='working'?'⏳ Đang xử lý':'○ Chờ xử lý';processing.append(badge);tr.append(processing);
+    const detail=document.createElement('td');detail.textContent=item.state==='pending'?'Chưa chạy':row.Status||'';tr.append(detail);
+    const action=document.createElement('td');if(item.state==='done'){const button=document.createElement('button');button.className='secondary edit-row';button.dataset.row=String(item.index);button.textContent=editingRow===item.index?'Đóng':'Sửa';action.append(button);}tr.append(action);fragment.append(tr);
+    if(editingRow===item.index){const formRow=document.createElement('tr'),formCell=document.createElement('td');formCell.colSpan=11;formCell.className='inline-edit';formCell.innerHTML=`<label>Email<input data-field="Email" value="${escapeAttr(row.Email||'')}"></label><label>Điện thoại<input data-field="Phone" value="${escapeAttr(row.Phone||'')}"></label><label>Địa chỉ<input data-field="Address" value="${escapeAttr(row.Address||'')}"></label><label>Thành phố<input data-field="City" value="${escapeAttr(row.City||'')}"></label><label>Bang<input data-field="State" value="${escapeAttr(row.State||'')}"></label><label>Mã ZIP<input data-field="ZipCode" value="${escapeAttr(row.ZipCode||'')}"></label><label>Facebook URL<input data-field="FacebookURL" value="${escapeAttr(row.FacebookURL||'')}"></label><label>Facebook ID<input data-field="FacebookID" value="${escapeAttr(row.FacebookID||'')}"></label><label>Instagram URL<input data-field="InstagramURL" value="${escapeAttr(row.InstagramURL||'')}"></label><button class="primary save-inline" data-row="${item.index}">Lưu</button><button class="secondary cancel-inline">Hủy</button>`;formRow.append(formCell);fragment.append(formRow);}
+  }
+  $('results').append(fragment);
 }
 function escapeAttr(value){return String(value).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function settings(){const delay=Number($('delay').value);return {delay:Math.min(120,Math.max(0,Number.isFinite(delay)?delay:1)),timeout:Math.min(90,Math.max(3,Number($('timeout').value)||30)),maxContact:Math.min(6,Math.max(0,Number($('maxContact').value)||0)),maxFacebookPages:Math.min(20,Math.max(1,Number($('maxFacebookPages').value)||12)),parallel:Math.min(12,Math.max(1,Number($('parallel').value)||3)),socialSearch:$('socialSearch').value,fastMode:$('fastMode').checked,forceFacebookID:$('forceFacebookID').checked,active:$('active').checked,pauseOnBlock:$('pauseOnBlock').checked};}
@@ -91,7 +112,7 @@ handle('export',()=>{
   const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
   a.download='website_contacts_'+new Date().toISOString().replace(/[:.]/g,'-')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
 });
-for(const id of ['filterGmail','filterPhone'])$(id).addEventListener('change',()=>render(runner.state));
+for(const id of ['filterGmail','filterPhone','filterAddress'])$(id).addEventListener('change',()=>render(runner.state));
 $('results').addEventListener('click',async event=>{const edit=event.target.closest('.edit-row'),cancel=event.target.closest('.cancel-inline'),save=event.target.closest('.save-inline');if(edit){editingRow=editingRow===Number(edit.dataset.row)?null:Number(edit.dataset.row);render(runner.state);return;}if(cancel){editingRow=null;render(runner.state);return;}if(save){const cell=save.closest('.inline-edit'),index=Number(save.dataset.row),values={};for(const input of cell.querySelectorAll('[data-field]'))values[input.dataset.field]=input.value.trim();try{await runner.saveManualEdit(index,values);editingRow=null;message('Đã lưu chỉnh sửa thủ công.');}catch(e){message(e.message);}}});
 await runner.load();
 for(const key of ['delay','timeout','maxContact','maxFacebookPages','parallel'])$(key).value=runner.state.settings[key]??(key==='parallel'?3:key==='maxFacebookPages'?12:'');

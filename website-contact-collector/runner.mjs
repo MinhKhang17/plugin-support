@@ -5,7 +5,7 @@ export class Paused extends Error {}
 export class Blocked extends Error {}
 export const emptyResult=record=>({SourceRow:record.row,Name:record.name,Area:record.area,Website:record.original,
   ResolvedURL:'',Email:'',Gmail:'',Phone:'',AllEmails:'',AllPhones:'',FacebookURL:'',FacebookID:'',FacebookIDStatus:'',
-  FacebookIDCandidates:'',FacebookSource:'',FacebookMethod:'',FacebookSearchStatus:'',InstagramURL:'',InstagramSource:'',InstagramSearchStatus:'',EmailSource:'',PhoneSource:'',Status:'Chờ xử lý',Notes:''});
+  FacebookIDCandidates:'',FacebookSource:'',FacebookMethod:'',FacebookSearchStatus:'',InstagramURL:'',InstagramSource:'',InstagramSearchStatus:'',EmailSource:'',PhoneSource:'',Address:'',City:'',State:'',ZipCode:'',Country:'',AddressSource:'',Status:'Chờ xử lý',Notes:''});
 export const headers=Object.keys(emptyResult({row:0,name:'',area:'',original:''}));
 
 export class Runner {
@@ -122,6 +122,8 @@ export class Runner {
     const result=emptyResult(record);this.state.partial=result;
     if(!record.url) {result.Status=record.original?'URL không hợp lệ':'Không có website';return result;}
     let emails=[],phones=[],emailSources=new Map(),phoneSources=new Map(),fbLinks=[],instagramLinks=[],contacts=[],facebookPages=[];
+    let address={street:'',city:'',state:'',zip:'',country:''};
+    let addressSource='';
     const fbEvidence=new Map(),instagramEvidence=new Map();
     let successfulPages=0;
     const notes=[];
@@ -131,13 +133,20 @@ export class Runner {
     const wantsFacebook=socialSearch==='facebook'||socialSearch==='both';
     const wantsInstagram=socialSearch==='instagram'||socialSearch==='both';
     const hasContactData=()=>emails.length>0&&phones.length>0;
-    const hostOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';}};
+    const hostOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return '';};};
     const checkpoint=async()=>{
       result.Email=primaryEmail(emails,result.ResolvedURL||record.url);
       result.Gmail=emails.find(e=>/@gmail\.com$/i.test(e))||'';
       result.Phone=phones[0]||'';
       result.AllEmails=emails.join('; ');result.AllPhones=phones.join('; ');
       result.EmailSource=emailSources.get(result.Email)||'';result.PhoneSource=phoneSources.get(result.Phone)||'';
+      // Gộp địa chỉ: ưu tiên giá trị đầu tiên tìm được, bổ sung trường còn thiếu từ các trang sau.
+      if(address.street&&!result.Address)result.Address=address.street;
+      if(address.city&&!result.City)result.City=address.city;
+      if(address.state&&!result.State)result.State=address.state;
+      if(address.zip&&!result.ZipCode)result.ZipCode=address.zip;
+      if(address.country&&!result.Country)result.Country=address.country;
+      result.AddressSource=addressSource||'';
       result.Notes=notes.join(' | ');result.Status='Đang xử lý';
       this.state.partial=result;await this.save();this.check();
     };
@@ -167,6 +176,15 @@ export class Runner {
         if(!instagramEvidence.has(instagram))instagramEvidence.set(instagram,{source:page.url,method:signal.method||'link'});
       }
       fbLinks=uniq(fbLinks);instagramLinks=uniq(instagramLinks);contacts=uniq(contacts);facebookPages=uniq(facebookPages);
+      // Gộp địa chỉ từ trang: ưu tiên giá trị đầu tiên, bổ sung trường còn thiếu.
+      if(page.address){
+        const a=page.address;
+        if(a.street&&!address.street){address.street=a.street;addressSource=page.url;}
+        if(a.city&&!address.city){address.city=a.city;if(!addressSource)addressSource=page.url;}
+        if(a.state&&!address.state){address.state=a.state;if(!addressSource)addressSource=page.url;}
+        if(a.zip&&!address.zip){address.zip=a.zip;if(!addressSource)addressSource=page.url;}
+        if(a.country&&!address.country){address.country=a.country;if(!addressSource)addressSource=page.url;}
+      }
       await checkpoint();
     };
     const attempt=async url=>{
@@ -336,7 +354,7 @@ export class Runner {
       const limit=Math.max(1,Math.min(12,Number(this.state.settings.parallel)||1));
       const rowDelay=()=>limit>1?Math.min(Number(this.state.settings.delay)||0,0.25):Number(this.state.settings.delay)||0;
       const domainActive=new Map(),domainLimit=3;
-      const domainOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';}};
+      const domainOf=url=>{try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase();}catch{return '';};};
       const acquireDomain=async domain=>{
         if(!domain)return;
         while((domainActive.get(domain)||0)>=domainLimit){this.check();await this.wait(100);}
